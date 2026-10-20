@@ -26,12 +26,14 @@ export default async function handler(req,res){
       return json(res,403,{error:'Email akun tidak cocok dengan email undangan.'});
     }
 
-    const {data:profile}=await admin.from('profiles').select('id').eq('id',user.id).maybeSingle();
+    const {data:profile,error:profileError}=await admin.from('profiles').select('id').eq('id',user.id).maybeSingle();
+    if(profileError) throw profileError;
     if(!profile){
-      await admin.from('profiles').insert({
+      const {error:createProfileError}=await admin.from('profiles').insert({
         id:user.id,name:user.user_metadata?.name||user.email?.split('@')[0]||'User',
         email:user.email||'',status:'active'
       });
+      if(createProfileError) throw createProfileError;
     }
 
     const {data:existing,error:existingError}=await admin.from('company_users')
@@ -51,11 +53,12 @@ export default async function handler(req,res){
     }
 
     if(Array.isArray(inv.branch_ids)){
-      await admin.from('company_user_branches').delete().eq('company_user_id',companyUserId);
+      const {error:deleteBranchesError}=await admin.from('company_user_branches').delete().eq('company_user_id',companyUserId);
+      if(deleteBranchesError) throw deleteBranchesError;
       if(inv.branch_ids.length){
         const rows=inv.branch_ids.map(branch_id=>({company_user_id:companyUserId,branch_id}));
-        const {error}=await admin.from('company_user_branches').insert(rows);
-        if(error) throw error;
+        const {error:insertBranchesError}=await admin.from('company_user_branches').insert(rows);
+        if(insertBranchesError) throw insertBranchesError;
       }
     }
 
