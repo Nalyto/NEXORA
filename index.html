@@ -518,17 +518,17 @@ function users(){
 function userForm(editId){
  const c=currentCompany(),b=companyBranches(c.id),u=editId?S.users.find(x=>x.id===editId):{name:'',email:'',role:'Kasir',status:true,companyIds:[c.id],branchIds:b.slice(0,1).map(x=>x.id)};
  const isInvite=!editId;
- modal(editId?'Edit Member':'Undang Member','<div class="notice" style="margin-bottom:14px">'+(isInvite?'Masukkan email anggota tim. NEXORA akan mengirim link undangan ke email tersebut. Member membuat passwordnya sendiri saat menerima undangan.':'Ubah role, status, atau cabang member.')+'</div><div class="formGrid"><div class="field full"><label>Email member</label><input id="uf_email" type="email" value="'+esc(u.email)+'" placeholder="nama@perusahaan.com" '+(editId?'readonly':'')+'></div><div class="field"><label>Nama</label><input id="uf_name" value="'+esc(u.name)+'" placeholder="Nama member"></div><div class="field"><label>Role</label><select id="uf_role">'+Object.keys(roles).filter(r=>r!=='Owner').map(r=>'<option>'+r+'</option>').join('')+'</select></div>'+(isInvite?'':'<div class="field"><label>Status</label><select id="uf_status"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></div>')+'<div class="field full"><label>Cabang yang bisa diakses</label><div class="list">'+b.map(x=>'<label class="listItem" style="cursor:pointer"><span>'+esc(x.name)+'</span><input type="checkbox" class="uf_branch" value="'+x.id+'" '+(u.branchIds.includes(x.id)?'checked':'')+' style="width:auto"></label>').join('')+'</div></div></div>',
- '<button class="ghost" onclick="closeModal()">Batal</button><button class="primary" onclick="saveUser(\''+(editId||'')+'\')">'+(isInvite?'Kirim Undangan':'Simpan')+'</button>');
+ modal(editId?'Edit Member':'Tambah Member','<div class="notice" style="margin-bottom:14px">'+(isInvite?'Isi email, nama, dan password awal untuk membuat akun member. Berikan password kepada member secara aman.':'Ubah role, status, atau cabang member.')+'</div><div class="formGrid"><div class="field full"><label>Email member</label><input id="uf_email" type="email" value="'+esc(u.email)+'" placeholder="nama@perusahaan.com" '+(editId?'readonly':'')+' required></div>'+(isInvite?'<div class="field full"><label>Password awal</label><input id="uf_password" type="password" minlength="8" autocomplete="new-password" placeholder="Minimal 8 karakter" required></div>':'')+'<div class="field"><label>Nama</label><input id="uf_name" value="'+esc(u.name)+'" placeholder="Nama member" required></div><div class="field"><label>Role</label><select id="uf_role">'+Object.keys(roles).filter(r=>r!=='Owner').map(r=>'<option>'+r+'</option>').join('')+'</select></div>'+(isInvite?'':'<div class="field"><label>Status</label><select id="uf_status"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></div>')+'<div class="field full"><label>Cabang yang bisa diakses</label><div class="list">'+b.map(x=>'<label class="listItem" style="cursor:pointer"><span>'+esc(x.name)+'</span><input type="checkbox" class="uf_branch" value="'+x.id+'" '+(u.branchIds.includes(x.id)?'checked':'')+' style="width:auto"></label>').join('')+'</div></div></div>',
+ '<button class="ghost" onclick="closeModal()">Batal</button><button class="primary" onclick="saveUser(\''+(editId||'')+'\')">'+(isInvite?'Buat Akun Member':'Simpan')+'</button>');
  document.getElementById('uf_role').value=u.role;
  if(!isInvite)document.getElementById('uf_status').value=String(u.status!==false);
 }
 async function saveUser(editId){
  if(!requirePermission('manageUsers'))return;
- const name=document.getElementById('uf_name')?.value.trim()||'',email=document.getElementById('uf_email')?.value.trim().toLowerCase()||'';
+ const name=document.getElementById('uf_name')?.value.trim()||'',email=document.getElementById('uf_email')?.value.trim().toLowerCase()||'',password=document.getElementById('uf_password')?.value||'';
  const bids=[...document.querySelectorAll('.uf_branch:checked')].map(x=>x.value);
  const roleKey=Object.keys({Owner:1,Manajer:1,Kasir:1,Marketing:1,Gudang:1}).find(x=>x===document.getElementById('uf_role')?.value)||'Kasir';
- if(!email)return toast('Email member wajib diisi');if(!bids.length)return toast('Pilih minimal satu cabang');
+ if(!email)return toast('Email member wajib diisi');if(!name)return toast('Nama member wajib diisi');if(!editId&&password.length<8)return toast('Password awal minimal 8 karakter');if(!bids.length)return toast('Pilih minimal satu cabang');
  if(editId){
   const target=S.users.find(x=>x.id===editId);
   if(target?.cloud)return toast('Edit member cloud belum tersedia di versi ini. Tidak ada perubahan yang disimpan.');
@@ -539,9 +539,9 @@ async function saveUser(editId){
  }
  try{
   const {data:{session}}=await supabaseClient.auth.getSession();if(!session?.access_token)throw new Error('Sesi Owner tidak ditemukan. Silakan login ulang.');
-  const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({email,name,role:roleKey.toLowerCase(),branchIds:bids,companyId:currentCompany().id})});
+  const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({email,name,password,role:roleKey.toLowerCase(),branchIds:bids,companyId:currentCompany().id})});
   const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'Gagal mengirim undangan.');
-  closeModal();render();toast('Undangan dikirim ke '+email);
+  closeModal();render();toast('Akun member berhasil dibuat untuk '+email);
  }catch(e){toast(e.message||'Gagal mengirim undangan member.')}
 }
 
