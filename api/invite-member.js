@@ -23,6 +23,36 @@ export default async function handler(req, res) {
     const { data: { user }, error: userError } = await admin.auth.getUser(token);
     if (userError || !user) return json(res, 401, { error: 'Sesi Owner tidak valid.' });
 
+        if (req.body?.action === 'update_member') {
+      const { memberUserId, name, role, branchIds, status, companyId } = req.body || {};
+      if (!memberUserId || !companyId || !name || !role) return json(res,400,{error:'Data member belum lengkap.'});
+      const { data: ownerMembership, error: ownerError } = await admin.from('company_users')
+        .select('id,role,status').eq('company_id',companyId).eq('user_id',user.id).maybeSingle();
+      if(ownerError) throw ownerError;
+      if(!ownerMembership || ownerMembership.status!=='active' || String(ownerMembership.role).toLowerCase()!=='owner')
+        return json(res,403,{error:'Hanya Owner aktif yang dapat mengubah member.'});
+      const validRoles=['manajer','kasir','marketing','gudang'];
+      const normalizedRole=String(role).toLowerCase();
+      if(!validRoles.includes(normalizedRole)) return json(res,400,{error:'Role member tidak valid.'});
+      const branches=Array.isArray(branchIds)?[...new Set(branchIds.filter(Boolean))]:[];
+      if(!branches.length) return json(res,400,{error:'Pilih minimal satu cabang.'});
+      const {data:branchRows,error:branchError}=await admin.from('branches').select('id').eq('company_id',companyId).in('id',branches);
+      if(branchError) throw branchError;
+      if((branchRows||[]).length!==branches.length) return json(res,400,{error:'Cabang tidak valid.'});
+      const {data:member,error:memberError}=await admin.from('company_users').select('id,role').eq('company_id',companyId).eq('user_id',memberUserId).maybeSingle();
+      if(memberError) throw memberError;
+      if(!member || String(member.role).toLowerCase()==='owner') return json(res,404,{error:'Member tidak ditemukan atau tidak dapat diubah.'});
+      const {error:profileError}=await admin.from('profiles').update({name:String(name).trim().slice(0,100)}).eq('id',memberUserId);
+      if(profileError) throw profileError;
+      const {error:updateError}=await admin.from('company_users').update({role:normalizedRole,status:status===true}).eq('id',member.id);
+      if(updateError) throw updateError;
+      const {error:deleteError}=await admin.from('company_user_branches').delete().eq('company_user_id',member.id);
+      if(deleteError) throw deleteError;
+      const {error:linksError}=await admin.from('company_user_branches').insert(branches.map(branch_id=>({company_user_id:member.id,branch_id})));
+      if(linksError) throw linksError;
+      return json(res,200,{ok:true,message:'Data member berhasil diperbarui.'});
+    }
+
     const { email, name, password, role, branchIds, companyId } = req.body || {};
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const normalizedName = String(name || '').trim();
