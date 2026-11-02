@@ -89,18 +89,27 @@ export default async function handler(req, res) {
       return json(res, 409, { error: 'Masih ada undangan aktif untuk email ini. Batalkan/selesaikan undangan lama terlebih dahulu.' });
     }
 
-    const { data: created, error: createError } = await admin.auth.admin.createUser({
+    let created, createError;
+    ({ data: created, error: createError } = await admin.auth.admin.createUser({
       email: normalizedEmail,
       password: String(password),
       email_confirm: true,
       user_metadata: { name: normalizedName }
-    });
+    }));
+    let createdByThisRequest = !!created?.user;
     if (createError) {
       const msg = String(createError.message || '').toLowerCase();
       if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
-        return json(res, 409, { error: 'Email ini sudah memiliki akun NEXORA. Gunakan email lain atau tambahkan akun yang sudah ada.' });
-      }
-      throw createError;
+        const {data:listed,error:listError}=await admin.auth.admin.listUsers({page:1,perPage:1000});
+        if(listError) throw listError;
+        const existingUser=(listed?.users||[]).find(x=>String(x.email||'').toLowerCase()===normalizedEmail);
+        if(!existingUser) return json(res,409,{error:'Email sudah terdaftar, tetapi akun tidak dapat ditemukan. Periksa akun melalui Supabase Auth.'});
+        const {data:existingMembership,error:existingMembershipError}=await admin.from('company_users')
+          .select('id').eq('company_id',companyId).eq('user_id',existingUser.id).maybeSingle();
+        if(existingMembershipError) throw existingMembershipError;
+        if(existingMembership) return json(res,409,{error:'Akun ini sudah menjadi member di perusahaan tersebut.'});
+        created={user:existingUser};
+      } else throw createError;
     }
 
     const newUser = created.user;
@@ -120,7 +129,7 @@ export default async function handler(req, res) {
       if (linksError) throw linksError;
     } catch (saveError) {
       // Roll back the Auth user only when its related membership setup failed.
-      await admin.auth.admin.deleteUser(newUser.id);
+      if(createdByThisRequest) await admin.auth.admin.deleteUser(newUser.id);
       throw saveError;
     }
 
