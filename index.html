@@ -364,40 +364,56 @@ async function sendMagicLink(){
  }catch(e){if(el)el.textContent='Gagal mengirim link: '+(e.message||'Coba lagi.')}
 }
 async function loginSubmit(){
- const email=document.getElementById('login_email')?.value.trim();
+ const email=(document.getElementById('login_email')?.value||'').trim().toLowerCase();
  const password=document.getElementById('login_password')?.value||'';
  const errorEl=document.getElementById('login_error');
- if(!email||!password){
-   if(errorEl)errorEl.textContent='Email dan password wajib diisi.';
-   return;
- }
- if(errorEl)errorEl.textContent='Memproses login...';
- const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
- if(error){
-   if(errorEl)errorEl.textContent='Email atau password salah.';
-   return;
- }
+ const submitBtn=document.getElementById('loginSubmitBtn');
+ if(!email||!password){if(errorEl)errorEl.textContent='Email dan password wajib diisi.';return}
+ if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Memproses...'}
+ if(errorEl){errorEl.className='auth-msg';errorEl.textContent='Memeriksa akun NEXORA...'}
  try{
-   let pending=null;
-   try{pending=JSON.parse(localStorage.getItem('nexora_pending_signup')||'null')}catch(_){}
-   if(pending?.email?.toLowerCase()===email.toLowerCase()){
-     await setupInitialCompany(data.user.id,pending.companyName);
-     localStorage.removeItem('nexora_pending_signup');
-   }
-   await loadCloudUser(data.user);
-   localStorage.setItem('nexora_login_email',email);
-   document.getElementById('authScreen')?.classList.add('hidden');closeModal();render();toast('Selamat datang di NEXORA');
+  const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
+  if(error)throw error;
+  if(!data?.user)throw new Error('Login berhasil, tetapi data akun tidak diterima.');
+
+  let pending=null;
+  try{pending=JSON.parse(localStorage.getItem('nexora_pending_signup')||'null')}catch(_){}
+  if(pending?.email?.toLowerCase()===email){
+   await setupInitialCompany(data.user.id,pending.companyName);
+   localStorage.removeItem('nexora_pending_signup');
+  }
+
+  // Invite acceptance and profile loading must finish before showing the workspace.
+  const inviteAccepted=await acceptPendingInvite();
+  if(!inviteAccepted)throw new Error('Undangan belum berhasil diproses. Periksa kembali link undangan atau hubungi Owner.');
+  await loadCloudUser(data.user);
+  localStorage.setItem('nexora_login_email',email);
+  document.getElementById('authScreen')?.classList.add('hidden');
+  closeModal();render();toast('Selamat datang di NEXORA');
  }catch(e){
-   await supabaseClient.auth.signOut();
-   if(errorEl)errorEl.textContent=e.message||'Akun belum siap digunakan.';
+  console.error('NEXORA login failed:',e);
+  try{await supabaseClient.auth.signOut()}catch(signOutError){console.error('Sign out after failed login:',signOutError)}
+  if(errorEl){
+   errorEl.className='auth-msg error';
+   const message=String(e?.message||'');
+   errorEl.textContent=/invalid login credentials/i.test(message)
+    ?'Email atau password salah. Pastikan email yang digunakan benar.'
+    :message||'Login gagal. Silakan coba lagi.';
+  }
+ }finally{
+  if(submitBtn){submitBtn.disabled=false;submitBtn.textContent=loginMode==='member'?'Masuk sebagai Member':'Masuk sebagai Owner'}
  }
 }
 
 let authStateTask=Promise.resolve();
 supabaseClient.auth.onAuthStateChange((event, session)=>{
- if((event==='SIGNED_IN'||event==='INITIAL_SESSION')&&session?.user&&!cloudAuthReady){
-  authStateTask=authStateTask.then(async()=>{if(cloudAuthReady)return;await acceptPendingInvite();await loadCloudUser(session.user);render();})
-   .catch(e=>{console.error(e);toast(e.message||'Sesi NEXORA tidak dapat dimuat.');});
+ if(event==='SIGNED_IN'&&session?.user&&!cloudAuthReady){
+  authStateTask=authStateTask.then(async()=>{
+   if(cloudAuthReady)return;
+   const inviteAccepted=await acceptPendingInvite();
+   if(!inviteAccepted)throw new Error('Undangan belum berhasil diproses.');
+   await loadCloudUser(session.user);render();
+  }).catch(e=>{console.error('NEXORA auth state error:',e);toast(e.message||'Sesi NEXORA tidak dapat dimuat.')});
  }
  if(event==='SIGNED_OUT'){cloudAuthReady=false;S.session={loggedIn:false,userId:null};save();}
 });
