@@ -14,7 +14,7 @@ export default async function handler(req,res){
   const {data:members,error:memberError}=await admin.from('company_users').select('id,company_id,role,status').eq('user_id',user.id).eq('status','active');
   if(memberError)throw memberError;
   if(!members?.length)return json(res,403,{error:'Akun berhasil login, tetapi belum memiliki keanggotaan perusahaan NEXORA yang aktif.'});
-  const {data:profile,error:profileError}=await admin.from('profiles').select('id,status').eq('id',user.id).maybeSingle();
+  const {data:profile,error:profileError}=await admin.from('profiles').select('id,name,email,status').eq('id',user.id).maybeSingle();
   if(profileError)throw profileError;
   if(profile?.status==='inactive')return json(res,403,{error:'Profil NEXORA sedang dinonaktifkan. Hubungi Owner.'});
   if(!profile){
