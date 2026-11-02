@@ -105,9 +105,9 @@ const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHA
 let cloudAuthReady=false;
 let loginFlowActive=false;
 const roles={
- Owner:{desc:'Akses penuh ke seluruh bisnis',color:'green',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Online Ordering','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Konsinyasi','Keuangan Konsinyasi','Keuangan','Akun Keuangan','Analitik','Audit Log','Backup & Data','Personalisasi']},
- Manajer:{desc:'Mengelola operasional dan performa',color:'orange',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Konsinyasi','Keuangan Konsinyasi','Keuangan','Akun Keuangan','Analitik','Audit Log']},
- Kasir:{desc:'Fokus pada transaksi penjualan',color:'blue',perms:['Dashboard','Kasir','Transaksi','Online Ordering','Konsinyasi','Keuangan Konsinyasi','Pelanggan / CRM']},
+ Owner:{desc:'Akses penuh ke seluruh bisnis',color:'green',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Online Ordering','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Penitip','Keuangan Konsinyasi','Keuangan','Akun Keuangan','Analitik','Audit Log','Backup & Data','Personalisasi']},
+ Manajer:{desc:'Mengelola operasional dan performa',color:'orange',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Penitip','Keuangan Konsinyasi','Keuangan','Akun Keuangan','Analitik','Audit Log']},
+ Kasir:{desc:'Fokus pada transaksi penjualan',color:'blue',perms:['Dashboard','Kasir','Transaksi','Online Ordering','Penitip','Keuangan Konsinyasi','Pelanggan / CRM']},
  Marketing:{desc:'Fokus pada penjualan dan analitik',color:'blue',perms:['Dashboard','Kasir','Transaksi','Pelanggan / CRM','Analitik']},
  Gudang:{desc:'Fokus pada stok dan produksi',color:'orange',perms:['Dashboard','Produk & Layanan','Inventori','Resep & HPP','Produksi','Supplier','Pembelian']}
 };
@@ -122,8 +122,8 @@ const navItems=[
  {id:'transactions',icon:'▤',label:'Transaksi',group:'Penjualan'},
  {id:'onlineOrdering',icon:'🛍',label:'Online Ordering',group:'Penjualan'},
  {id:'purchases',icon:'🛒',label:'Pembelian',group:'Penjualan'},
- {id:'consignment',icon:'⇄',label:'Konsinyasi',group:'Penjualan'},
- {id:'consignmentFinance',icon:'◩',label:'Keuangan Konsinyasi',group:'Analitik'},
+ {id:'consignment',icon:'⇄',label:'Penitip',group:'Konsinyasi'},
+ {id:'consignmentFinance',icon:'◩',label:'Keuangan Konsinyasi',group:'Konsinyasi'},
  {id:'products',icon:'◈',label:'Produk & Layanan',group:'Operasional'},
  {id:'inventory',icon:'◫',label:'Inventori',group:'Operasional'},
  {id:'recipes',icon:'◇',label:'Resep & HPP',group:'Operasional'},
