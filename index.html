@@ -104,7 +104,7 @@ const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHA
 });
 let cloudAuthReady=false;
 const roles={
- Owner:{desc:'Akses penuh ke seluruh bisnis',color:'green',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Keuangan','Akun Keuangan','Analitik','Audit Log','Backup & Data','Personalisasi']},
+ Owner:{desc:'Akses penuh ke seluruh bisnis',color:'green',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Online Ordering','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Keuangan','Akun Keuangan','Analitik','Audit Log','Backup & Data','Personalisasi']},
  Manajer:{desc:'Mengelola operasional dan performa',color:'orange',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Keuangan','Akun Keuangan','Analitik','Audit Log']},
  Kasir:{desc:'Fokus pada transaksi penjualan',color:'blue',perms:['Dashboard','Kasir','Transaksi','Pelanggan / CRM']},
  Marketing:{desc:'Fokus pada penjualan dan analitik',color:'blue',perms:['Dashboard','Kasir','Transaksi','Pelanggan / CRM','Analitik']},
@@ -119,6 +119,7 @@ const navItems=[
  {id:'suppliers',icon:'♢',label:'Supplier',group:'Bisnis'},
  {id:'pos',icon:'▣',label:'Kasir',group:'Penjualan'},
  {id:'transactions',icon:'▤',label:'Transaksi',group:'Penjualan'},
+ {id:'onlineOrdering',icon:'🛍',label:'Online Ordering',group:'Penjualan'},
  {id:'purchases',icon:'🛒',label:'Pembelian',group:'Penjualan'},
  {id:'products',icon:'◈',label:'Produk & Layanan',group:'Operasional'},
  {id:'inventory',icon:'◫',label:'Inventori',group:'Operasional'},
@@ -474,7 +475,7 @@ function shell(){
  '<nav class="nav">'+groups.map(g=>'<div class="navGroup">'+g+'</div>'+navItems.filter(x=>x.group===g&&allowed(x.label)).map(x=>'<button class="'+(page===x.id?'active':'')+'" onclick="go(\''+x.id+'\')"><span class="ico">'+x.icon+'</span>'+x.label+'</button>').join('')).join('')+'</nav>'+
  '<div class="sideBottom"><button class="profile" onclick="accountSwitcher()" style="width:100%;text-align:left;color:inherit"><div class="avatar">'+initials(u?.name)+'</div><div><b>'+esc(u?.name||'User')+'</b><span>'+esc(u?.role||'')+'</span></div><span style="margin-left:auto">⌄</span></button></div></aside>'+
  '<main class="main"><div class="topbar"><div class="pageTitle"><h1>'+esc(navItems.find(x=>x.id===page)?.label||'Dashboard')+'</h1><p>'+esc(c?.name||'')+' · '+esc(b?.name||'')+'</p></div><div class="topActions"><button class="iconBtn mobileMenuBtn" onclick="toggleMobileMenu()" title="Menu">☰</button><button class="iconBtn" onclick="workspaceModal()" title="Ganti workspace">⌂</button><button class="iconBtn desktopOnly" onclick="go(\'settings\')" title="Pengaturan">⚙</button></div></div><div id="content"></div></main><nav class="mobileNav">'+['dashboard','pos','transactions','customers'].map(id=>navItems.find(x=>x.id===id)).filter(x=>x&&allowed(x.label)).map(x=>'<button class="'+(page===x.id?'active':'')+'" onclick="go(\''+x.id+'\')"><div>'+x.icon+'</div>'+x.label+'</button>').join('')+'<button class="mobileNavMore" onclick="toggleMobileMenu()"><div>☰</div>Menu</button></nav>';
- applyTheme();({dashboard,companies,branches,users,customers,suppliers,pos,transactions,purchases,products,inventory,recipes,production,finance,accounts,analytics,audit:auditPage,data,settings}[page]||dashboard)();
+ applyTheme();({dashboard,companies,branches,users,customers,suppliers,pos,transactions,onlineOrdering,purchases,products,inventory,recipes,production,finance,accounts,analytics,audit:auditPage,data,settings}[page]||dashboard)();
 }
 function workspaceModal(){
  const u=currentUser();const cs=S.companies.filter(c=>u.companyIds.includes(c.id));const c=currentCompany();const bs=companyBranches(c?.id).filter(b=>u.branchIds.includes(b.id));
@@ -907,6 +908,33 @@ function restoreBackup(){
  const file=document.getElementById('restoreFile')?.files?.[0];if(!file)return toast('Pilih file backup terlebih dahulu');
  const r=new FileReader();r.onload=()=>{try{const p=JSON.parse(r.result);if(!p.data||!p.version)return toast('File backup tidak valid');Object.keys(p.data).forEach(k=>{S[k]=p.data[k]});if(!S.income)S.income=[];if(!S.expenses)S.expenses=[];if(!S.customers)S.customers=[];if(!S.suppliers)S.suppliers=[];if(!S.purchases)S.purchases=[];if(!S.accounts)S.accounts=[];if(!S.auditLogs)S.auditLogs=[];logAudit('Restore backup','Data','Data dipulihkan dari file '+file.name);save();location.reload()}catch(e){toast('Backup gagal dibaca')}};r.readAsText(file);
 }
+
+async function onlineApi(payload){
+ const {data:{session}}=await supabaseClient.auth.getSession();
+ if(!session?.access_token)throw new Error('Sesi login tidak ditemukan. Silakan login ulang.');
+ const r=await fetch('/api/online-ordering',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify(payload)});
+ const d=await r.json();if(!r.ok)throw new Error(d.error||'Permintaan gagal.');return d;
+}
+function onlineFileData(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)})}
+async function onlineOrdering(){
+ const c=currentCompany(),b=currentBranch();if(!c||!b)return toast('Pilih perusahaan dan cabang terlebih dahulu.');
+ if(currentUser()?.role!=='Owner')return toast('Menu ini hanya dapat dikelola Owner.');
+ const slug=(c.name+'-'+b.name).toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+ document.getElementById('content').innerHTML='<div class="bar"><div><h2>Online Ordering</h2><p class="muted">Toko online, QRIS, dan pesanan pelanggan.</p></div></div><div class="grid2"><div class="card"><h3>Pengaturan Toko Online</h3><p class="muted small">Semua produk aktif pada perusahaan ini akan disinkronkan ke toko cabang yang dipilih.</p><div class="field"><label>Nama toko</label><input id="oo_name" value="'+esc(c.name)+'"></div><div class="field"><label>Link toko (slug)</label><input id="oo_slug" value="'+esc(slug)+'"></div><div class="field"><label>Deskripsi toko</label><textarea id="oo_desc" rows="2" placeholder="Deskripsi singkat toko"></textarea></div><div class="field"><label>Upload gambar QRIS (JPG/PNG/WEBP, maks. 5 MB)</label><input id="oo_qris" type="file" accept="image/jpeg,image/png,image/webp"></div><div class="notice">QRIS disimpan secara private. Pembeli hanya mendapat tautan sementara untuk melihat gambar QRIS.</div><label class="switchRow"><span><b>Publikasikan toko</b><small class="muted">Toko dapat dibuka pembeli melalui link.</small></span><input id="oo_publish" type="checkbox" style="width:auto"></label><div class="actions"><button class="primary" onclick="saveOnlineStore()">Simpan pengaturan</button><button class="ghost" onclick="syncOnlineProducts()">Sinkronkan produk</button></div><p id="oo_msg" class="muted small"></p><div id="oo_link" class="notice hidden"></div></div><div class="card"><div class="sectionHead"><div><h3>Pesanan Online</h3><p class="muted small">Cabang aktif: '+esc(b.name)+'</p></div><button class="ghost" onclick="loadOnlineOrders()">↻ Muat ulang</button></div><div id="oo_orders" class="list"><div class="empty">Memuat pesanan...</div></div></div></div>';
+ loadOnlineOrders();
+}
+async function saveOnlineStore(){
+ const c=currentCompany(),b=currentBranch(),file=document.getElementById('oo_qris').files[0];if(file&&file.size>5*1024*1024)return toast('Ukuran QRIS maksimal 5 MB.');
+ try{const qrisImageData=file?await onlineFileData(file):null;const d=await onlineApi({action:'save_store',companyId:c.id,branchId:b.id,displayName:document.getElementById('oo_name').value,slug:document.getElementById('oo_slug').value,description:document.getElementById('oo_desc').value,isPublished:document.getElementById('oo_publish').checked,qrisImageData});const url=location.origin+'/store.html?slug='+encodeURIComponent(d.store.slug);const el=document.getElementById('oo_link');el.classList.remove('hidden');el.innerHTML='Link toko: <a href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(url)+'</a>';document.getElementById('oo_msg').textContent='Pengaturan toko berhasil disimpan.';toast('Pengaturan toko tersimpan');}catch(e){toast(e.message)}
+}
+async function syncOnlineProducts(){
+ const c=currentCompany(),b=currentBranch(),products=S.products.filter(p=>p.companyId===c.id).map(p=>({id:p.id,name:p.name,category:p.category,price:p.price}));try{const d=await onlineApi({action:'sync_products',companyId:c.id,branchId:b.id,products});toast(d.synced+' produk berhasil disinkronkan.');}catch(e){toast(e.message)}
+}
+async function loadOnlineOrders(){
+ const c=currentCompany(),b=currentBranch(),el=document.getElementById('oo_orders');if(!el)return;el.innerHTML='<div class="empty">Memuat pesanan...</div>';try{const d=await onlineApi({action:'owner_list',companyId:c.id,branchId:b.id});el.innerHTML=d.orders.length?d.orders.map(o=>'<div class="listItem" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>'+esc(o.order_number)+'</b><div class="muted small">'+esc(o.customer_name)+' · '+esc(o.customer_phone)+'</div><div style="margin:6px 0"><b>'+money(o.total)+'</b> · <span class="badge '+(o.payment_status==='proof_submitted'?'orange':o.payment_status==='approved'?'green':'')+'">'+esc(o.payment_status)+'</span></div>'+(o.paymentProofUrl?'<a href="'+esc(o.paymentProofUrl)+'" target="_blank" rel="noopener">Lihat bukti pembayaran</a>':'<span class="muted small">Belum ada bukti pembayaran</span>')+(o.payment_status==='proof_submitted'?'<div class="actions" style="margin-top:9px"><button class="primary" onclick="reviewOnlineOrder(\''+o.id+'\',\'approve\')">Setujui & antrekan</button><button class="ghost" onclick="reviewOnlineOrder(\''+o.id+'\',\'reject\')">Tolak</button></div>':'')+'</div></div>').join(''):'<div class="empty">Belum ada pesanan online.</div>';}catch(e){el.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
+}
+async function reviewOnlineOrder(orderId,decision){const c=currentCompany();let reason='';if(decision==='reject'){reason=prompt('Alasan penolakan (opsional):')||'Bukti pembayaran belum dapat diverifikasi.';}try{await onlineApi({action:'review_order',companyId:c.id,orderId,decision,reason});toast(decision==='approve'?'Pembayaran disetujui. Pesanan masuk antrean.':'Pembayaran ditolak.');loadOnlineOrders();}catch(e){toast(e.message)}}
+
 function render(){if(!S.session?.loggedIn){document.getElementById('app').innerHTML='';applyTheme();loginForm();return}document.getElementById('authScreen')?.classList.add('hidden');const u=currentUser();if(!u||u.status===false){S.session={loggedIn:false,userId:null};save();return render()}shell()}
 bootstrapAuth();
 </script>
