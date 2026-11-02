@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://bejgqjtvkqanzuihby.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://bejgqjqjtvkqanzuihby.supabase.co';
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function json(res,status,body){res.status(status).setHeader('Content-Type','application/json').json(body);}
