@@ -814,7 +814,7 @@ function toggleConsignmentPickup(cid,checked){
 }function consignmentSale(cid){
  const x=(S.consignments||[]).find(z=>z.id===cid);if(!x)return;const available=x.receivedQty-x.soldQty-x.returnedQty,raw=prompt('Jumlah terjual (tersedia '+available+')','1');if(raw===null)return;const qty=Number(raw);if(!Number.isInteger(qty)||qty<1||qty>available)return toast('Jumlah tidak valid.');
  const partnerPrice=Number(x.partnerPrice??(Number(x.unitPrice||0)*(1-Number(x.commission||0)/100))),retailPrice=Number(x.retailPrice??x.unitPrice??0),amount=qty*retailPrice,now=new Date().toISOString(),saleId=id();
- x.soldQty+=qty;x.salesLedger=x.salesLedger||[];x.salesLedger.push({id:saleId,qty,amount,partnerAmount:qty*partnerPrice,date:now});
+ x.soldQty+=qty;x.status='active';x.salesLedger=x.salesLedger||[];x.salesLedger.push({id:saleId,qty,amount,partnerAmount:qty*partnerPrice,date:now});
  S.income=S.income||[];S.income.unshift({id:id(),companyId:x.companyId,branchId:x.branchId,category:'Penjualan Konsinyasi',amount,note:x.product+' — '+x.partner+' ('+qty+' unit)',date:now,sourceType:'consignment',sourceId:x.id,sourceRef:saleId,type:'income'});
  save();consignment();toast('Penjualan tercatat sebagai kas masuk di Keuangan.');
 }
