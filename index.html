@@ -516,9 +516,29 @@ function saveBranch(editId){
 }
 function users(){
  const c=currentCompany(),us=S.users.filter(u=>u.companyIds.includes(c?.id));
- document.getElementById('content').innerHTML='<div class="bar"><div><h2>Pengguna & Role</h2><p class="muted">Atur siapa yang boleh mengakses workspace ini.</p></div><button class="primary" onclick="userForm()">+ Undang Member</button></div><div class="card tableWrap"><table class="table"><thead><tr><th>Pengguna</th><th>Role</th><th>Cabang</th><th>Status</th><th>Aksi</th></tr></thead><tbody>'+us.map(u=>'<tr><td><div class="listMain"><div class="avatar">'+initials(u.name)+'</div><div><b>'+esc(u.name)+'</b><span class="muted small">'+esc(u.email)+'</span></div></div></td><td><span class="badge '+(u.role==='Owner'?'green':'')+'">'+esc(u.role)+'</span></td><td>'+companyBranches(c.id).filter(b=>u.branchIds.includes(b.id)).map(b=>esc(b.name)).join(', ')+'</td><td><span class="badge '+(u.status?'green':'red')+'">'+(u.status?'Aktif':'Nonaktif')+'</span></td><td><button class="ghost" onclick="userForm(\''+u.id+'\')">Edit</button></td></tr>').join('')+'</tbody></table></div><div class="grid3" style="margin-top:15px">'+Object.entries(roles).map(([r,v])=>'<div class="card roleCard"><h3>'+r+'</h3><p class="muted small">'+v.desc+'</p><div class="perm">'+v.perms.slice(0,5).map(p=>'<span class="badge">'+p+'</span>').join('')+(v.perms.length>5?'<span class="badge">+'+(v.perms.length-5)+'</span>':'')+'</div></div>').join('')+'</div>';
+ document.getElementById('content').innerHTML='<div class="bar"><div><h2>Pengguna & Role</h2><p class="muted">Atur siapa yang boleh mengakses workspace ini.</p></div><button class="primary" onclick="userForm()">+ Undang Member</button></div><div class="card tableWrap"><table class="table"><thead><tr><th>Pengguna</th><th>Role</th><th>Cabang</th><th>Status</th><th>Aksi</th></tr></thead><tbody>'+us.map(u=>'<tr><td><div class="listMain"><div class="avatar">'+initials(u.name)+'</div><div><b>'+esc(u.name)+'</b><span class="muted small">'+esc(u.email)+'</span></div></div></td><td><span class="badge '+(u.role==='Owner'?'green':'')+'">'+esc(u.role)+'</span></td><td>'+companyBranches(c.id).filter(b=>u.branchIds.includes(b.id)).map(b=>esc(b.name)).join(', ')+'</td><td><span class="badge '+(u.status?'green':'red')+'">'+(u.status?'Aktif':'Nonaktif')+'</span></td><td><button class="ghost" onclick="userForm(\''+u.id+'\')">Edit</button><button class=\"ghost\" style=\"color:#dc2626\" onclick=\"deleteMember(' + u.id + ')\">Hapus</button></td></tr>').join('')+'</tbody></table></div><div class="grid3" style="margin-top:15px">'+Object.entries(roles).map(([r,v])=>'<div class="card roleCard"><h3>'+r+'</h3><p class="muted small">'+v.desc+'</p><div class="perm">'+v.perms.slice(0,5).map(p=>'<span class="badge">'+p+'</span>').join('')+(v.perms.length>5?'<span class="badge">+'+(v.perms.length-5)+'</span>':'')+'</div></div>').join('')+'</div>';
 }
 
+async function deleteMember(userId){
+ if(!requirePermission('manageUsers'))return;
+ const target=S.users.find(x=>x.id===userId);if(!target)return;
+ if(target.role==='Owner')return toast('Akun Owner tidak dapat dihapus dari menu member.');
+ if(!confirm('Hapus akses '+target.name+' dari perusahaan '+currentCompany().name+'? Akun login dan data perusahaan lain tidak akan dihapus.'))return;
+ try{
+  if(target.cloud){
+   const {data:{session}}=await supabaseClient.auth.getSession();if(!session?.access_token)throw new Error('Sesi Owner tidak ditemukan. Login ulang.');
+   const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({action:'delete_member',memberUserId:target.authUserId||target.id,companyId:currentCompany().id})});
+   const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'Gagal menghapus member.');
+   await loadCloudUser(session.user);
+  }else{
+   target.companyIds=(target.companyIds||[]).filter(id=>id!==currentCompany().id);
+   target.branchIds=(target.branchIds||[]).filter(id=>!companyBranches(currentCompany().id).some(b=>b.id===id));
+   if(!target.companyIds.length)S.users=S.users.filter(x=>x.id!==userId);
+   save();
+  }
+  render();toast('Akses member berhasil dihapus.');
+ }catch(e){toast(e.message||'Gagal menghapus member.')}
+}
 function userForm(editId){
  const c=currentCompany(),b=companyBranches(c.id),u=editId?S.users.find(x=>x.id===editId):{name:'',email:'',role:'Kasir',status:true,companyIds:[c.id],branchIds:b.slice(0,1).map(x=>x.id)};
  const isInvite=!editId;
