@@ -23,6 +23,24 @@ export default async function handler(req, res) {
     const { data: { user }, error: userError } = await admin.auth.getUser(token);
     if (userError || !user) return json(res, 401, { error: 'Sesi Owner tidak valid.' });
 
+    if (req.body?.action === 'delete_member') {
+      const { memberUserId, companyId } = req.body || {};
+      if (!memberUserId || !companyId) return json(res,400,{error:'Data member belum lengkap.'});
+      const {data:ownerMembership,error:ownerError}=await admin.from('company_users').select('id,role,status').eq('company_id',companyId).eq('user_id',user.id).maybeSingle();
+      if(ownerError)throw ownerError;
+      if(!ownerMembership||ownerMembership.status!=='active'||String(ownerMembership.role).toLowerCase()!=='owner')
+        return json(res,403,{error:'Hanya Owner aktif yang dapat menghapus member.'});
+      if(memberUserId===user.id)return json(res,400,{error:'Owner tidak dapat menghapus akunnya sendiri dari menu ini.'});
+      const {data:member,error:memberError}=await admin.from('company_users').select('id,role').eq('company_id',companyId).eq('user_id',memberUserId).maybeSingle();
+      if(memberError)throw memberError;
+      if(!member||String(member.role).toLowerCase()==='owner')return json(res,404,{error:'Member tidak ditemukan atau akun Owner tidak dapat dihapus.'});
+      const {error:linksError}=await admin.from('company_user_branches').delete().eq('company_user_id',member.id);
+      if(linksError)throw linksError;
+      const {error:deleteError}=await admin.from('company_users').delete().eq('id',member.id);
+      if(deleteError)throw deleteError;
+      return json(res,200,{ok:true,message:'Akses member ke perusahaan ini berhasil dihapus. Akun Auth dan data perusahaan lain tetap dipertahankan.'});
+    }
+
         if (req.body?.action === 'update_member') {
       const { memberUserId, name, role, branchIds, status, companyId } = req.body || {};
       if (!memberUserId || !companyId || !name || !role) return json(res,400,{error:'Data member belum lengkap.'});
