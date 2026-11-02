@@ -60,6 +60,11 @@ export default async function handler(req, res) {
       const {data:member,error:memberError}=await admin.from('company_users').select('id,role').eq('company_id',companyId).eq('user_id',memberUserId).maybeSingle();
       if(memberError) throw memberError;
       if(!member || String(member.role).toLowerCase()==='owner') return json(res,404,{error:'Member tidak ditemukan atau tidak dapat diubah.'});
+      if(req.body?.newPassword){
+        if(String(req.body.newPassword).length<8)return json(res,400,{error:'Password baru minimal 8 karakter.'});
+        const {error:passwordError}=await admin.auth.admin.updateUserById(memberUserId,{password:String(req.body.newPassword)});
+        if(passwordError)throw passwordError;
+      }
       const {error:profileError}=await admin.from('profiles').update({name:String(name).trim().slice(0,100)}).eq('id',memberUserId);
       if(profileError) throw profileError;
       const {error:updateError}=await admin.from('company_users').update({role:normalizedRole,status:status===true}).eq('id',member.id);
