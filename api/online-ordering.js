@@ -7,7 +7,7 @@ const admin=()=>createClient(URL,KEY,{auth:{autoRefreshToken:false,persistSessio
 const send=(res,status,body)=>res.status(status).setHeader('Content-Type','application/json').json(body);
 const slugify=s=>String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,55);
 const mimeExt=m=>({'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[m]||null);
-function decodeImage(data){const m=String(data||'').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);if(!m)throw new Error('Format gambar harus JPG, PNG, atau WEBP.');const b=Buffer.from(m[2],'base64');if(!b.length||b.length>5*1024*1024)throw new Error('Ukuran gambar maksimal 5 MB.');return {bytes:b,mime:m[1],ext:mimeExt(m[1])};}
+function decodeImage(data){const m=String(data||'').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);if(!m)throw new Error('Format gambar harus JPG, PNG, atau WEBP.');const b=Buffer.from(m[2],'base64');if(!b.length||b.length>3*1024*1024)throw new Error('Ukuran gambar maksimal 3 MB.');return {bytes:b,mime:m[1],ext:mimeExt(m[1])};}
 async function ownerFor(db,req,companyId){const token=(req.headers.authorization||'').replace(/^Bearer\s+/i,'').trim();if(!token)throw Object.assign(new Error('Sesi login diperlukan.'),{status:401});const {data:{user},error}=await db.auth.getUser(token);if(error||!user)throw Object.assign(new Error('Sesi login tidak valid.'),{status:401});const {data:m,error:e}=await db.from('company_users').select('id,role,status').eq('company_id',companyId).eq('user_id',user.id).maybeSingle();if(e)throw e;if(!m||m.status!=='active'||String(m.role).toLowerCase()!=='owner')throw Object.assign(new Error('Hanya Owner aktif yang dapat mengelola toko dan verifikasi.'),{status:403});return user;}
 export default async function handler(req,res){
  if(req.method!=='POST')return send(res,405,{error:'Method not allowed'});
@@ -52,6 +52,11 @@ export default async function handler(req,res){
    const {data:order,error:oe}=await db.from('online_orders').select('id,company_id,payment_status,order_status').eq('id',orderId).eq('company_id',companyId).maybeSingle();if(oe)throw oe;if(!order)return send(res,404,{error:'Pesanan tidak ditemukan.'});if(order.payment_status!=='proof_submitted')return send(res,409,{error:'Pesanan belum memiliki bukti pembayaran yang menunggu verifikasi.'});
    const patch=decision==='approve'?{payment_status:'approved',order_status:'queued',reviewed_by:user.id,reviewed_at:new Date().toISOString(),rejection_note:null}:{payment_status:'rejected',order_status:'awaiting_payment',reviewed_by:user.id,reviewed_at:new Date().toISOString(),rejection_note:String(body.reason||'Bukti pembayaran belum dapat diverifikasi.').slice(0,300)};
    const {error:ue}=await db.from('online_orders').update(patch).eq('id',orderId);if(ue)throw ue;return send(res,200,{ok:true,orderStatus:patch.order_status,paymentStatus:patch.payment_status});
+  }
+  if(action==='owner_get_store'){
+   const companyId=String(body.companyId||''),branchId=String(body.branchId||'');await ownerFor(db,req,companyId);
+   const {data:store,error}=await db.from('online_stores').select('slug,display_name,description,is_published,qris_image_path').eq('company_id',companyId).eq('branch_id',branchId).maybeSingle();if(error)throw error;
+   return send(res,200,{store:store?{slug:store.slug,displayName:store.display_name,description:store.description,isPublished:store.is_published,hasQris:!!store.qris_image_path}:null});
   }
   if(action==='owner_list'){
    const companyId=String(body.companyId||''),user=await ownerFor(db,req,companyId);
