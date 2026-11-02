@@ -365,6 +365,14 @@ async function sendMagicLink(){
   if(el)el.textContent='Jika akun terdaftar, periksa inbox dan spam untuk link login.';
  }catch(e){if(el)el.textContent='Gagal mengirim link: '+(e.message||'Coba lagi.')}
 }
+async function ensureCloudProfile(){
+ const {data:{session}}=await supabaseClient.auth.getSession();
+ if(!session?.access_token)throw new Error('Sesi login tidak ditemukan.');
+ const response=await fetch('/api/session-bootstrap',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:'{}'});
+ const result=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(result.error||'Gagal menyiapkan profil akun.');
+ return result;
+}
 async function loginSubmit(){
  const email=(document.getElementById('login_email')?.value||'').trim().toLowerCase();
  const password=document.getElementById('login_password')?.value||'';
@@ -389,6 +397,7 @@ async function loginSubmit(){
   // Invite acceptance and profile loading must finish before showing the workspace.
   const inviteAccepted=await acceptPendingInvite();
   if(!inviteAccepted)throw new Error('Undangan belum berhasil diproses. Periksa kembali link undangan atau hubungi Owner.');
+  await ensureCloudProfile();
   await loadCloudUser(data.user);
   localStorage.setItem('nexora_login_email',email);
   document.getElementById('authScreen')?.classList.add('hidden');
@@ -416,6 +425,7 @@ supabaseClient.auth.onAuthStateChange((event, session)=>{
    if(cloudAuthReady)return;
    const inviteAccepted=await acceptPendingInvite();
    if(!inviteAccepted)throw new Error('Undangan belum berhasil diproses.');
+   await ensureCloudProfile();
    await loadCloudUser(session.user);render();
   }).catch(e=>{console.error('NEXORA auth state error:',e);toast(e.message||'Sesi NEXORA tidak dapat dimuat.')});
  }
@@ -449,7 +459,7 @@ async function bootstrapAuth(){
  applyTheme();
  const {data:{session}}=await supabaseClient.auth.getSession();
  if(session?.user){
-  try{await acceptPendingInvite();await loadCloudUser(session.user);render();return;}
+  try{await acceptPendingInvite();await ensureCloudProfile();await loadCloudUser(session.user);render();return;}
   catch(e){console.error(e);S.session={loggedIn:false,userId:null};save();toast(e.message||'Sesi NEXORA tidak dapat dimuat.');}
  }
  S.session={loggedIn:false,userId:null};save();render();
