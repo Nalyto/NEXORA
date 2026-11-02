@@ -122,6 +122,7 @@ const navItems=[
  {id:'transactions',icon:'▤',label:'Transaksi',group:'Penjualan'},
  {id:'onlineOrdering',icon:'🛍',label:'Online Ordering',group:'Penjualan'},
  {id:'purchases',icon:'🛒',label:'Pembelian',group:'Penjualan'},
+ {id:'consignment',icon:'⇄',label:'Konsinyasi',group:'Penjualan'},
  {id:'products',icon:'◈',label:'Produk & Layanan',group:'Operasional'},
  {id:'inventory',icon:'◫',label:'Inventori',group:'Operasional'},
  {id:'recipes',icon:'◇',label:'Resep & HPP',group:'Operasional'},
@@ -175,6 +176,7 @@ function ensureV2(){
  S.users=(S.users||[]).map(u=>({...u,pin:u.pin||'1234',status:u.status!==false,companyIds:u.companyIds||[],branchIds:u.branchIds||[]}));
  S.session=S.session||{loggedIn:false,userId:null};
  S.recipes=S.recipes||[];
+ S.consignments=S.consignments||[];
  S.movements=S.movements||[];
  S.production=S.production||[];
  S.receipt=S.receipt||{paper:'80mm',showLogo:true,showTax:true,footer:'Terima kasih sudah berkunjung!'};
