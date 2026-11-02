@@ -77,9 +77,9 @@ export default async function handler(req,res){
    return send(res,200,{store:store?{slug:store.slug,displayName:store.display_name,description:store.description,isPublished:store.is_published,hasQris:!!store.qris_image_path}:null});
   }
   if(action==='owner_list'){
-   const companyId=String(body.companyId||''),user=await ownerFor(db,req,companyId);
-   let query=db.from('online_orders').select('id,branch_id,order_number,customer_name,customer_phone,total,payment_status,order_status,created_at,payment_proof_path,customer_note').eq('company_id',companyId).order('created_at',{ascending:false}).limit(100);
-   if(body.branchId)query=query.eq('branch_id',String(body.branchId));
+   const companyId=String(body.companyId||''),branchId=body.branchId?String(body.branchId):null,{user}=await staffFor(db,req,companyId,branchId,['owner','kasir']);
+   let query=db.from('online_orders').select('id,branch_id,order_number,unique_code,payment_method,cash_received_amount,cash_change,customer_name,customer_phone,total,payment_status,order_status,created_at,payment_proof_path,customer_note').eq('company_id',companyId).order('created_at',{ascending:false}).limit(100);
+   if(branchId)query=query.eq('branch_id',branchId);
    const {data:orders,error}=await query;if(error)throw error;
    const withProof=await Promise.all((orders||[]).map(async o=>{if(!o.payment_proof_path)return {...o,paymentProofUrl:null};const {data:s}=await db.storage.from(BUCKET).createSignedUrl(o.payment_proof_path,900);return {...o,paymentProofUrl:s?.signedUrl||null};}));
    return send(res,200,{orders:withProof,userId:user.id});
