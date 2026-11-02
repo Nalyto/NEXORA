@@ -103,6 +103,7 @@ const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHA
  auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
 });
 let cloudAuthReady=false;
+let loginFlowActive=false;
 const roles={
  Owner:{desc:'Akses penuh ke seluruh bisnis',color:'green',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Online Ordering','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Keuangan','Akun Keuangan','Analitik','Audit Log','Backup & Data','Personalisasi']},
  Manajer:{desc:'Mengelola operasional dan performa',color:'orange',perms:['Dashboard','Perusahaan','Cabang','Pengguna & Role','Pelanggan / CRM','Supplier','Kasir','Transaksi','Pembelian','Produk & Layanan','Inventori','Resep & HPP','Produksi','Keuangan','Akun Keuangan','Analitik','Audit Log']},
@@ -371,6 +372,7 @@ async function loginSubmit(){
  const submitBtn=document.getElementById('loginSubmitBtn');
  if(!email||!password){if(errorEl)errorEl.textContent='Email dan password wajib diisi.';return}
  if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Memproses...'}
+ loginFlowActive=true;
  if(errorEl){errorEl.className='auth-msg';errorEl.textContent='Memeriksa akun NEXORA...'}
  try{
   const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
@@ -402,13 +404,14 @@ async function loginSubmit(){
     :message||'Login gagal. Silakan coba lagi.';
   }
  }finally{
+  loginFlowActive=false;
   if(submitBtn){submitBtn.disabled=false;submitBtn.textContent=loginMode==='member'?'Masuk sebagai Member':'Masuk sebagai Owner'}
  }
 }
 
 let authStateTask=Promise.resolve();
 supabaseClient.auth.onAuthStateChange((event, session)=>{
- if(event==='SIGNED_IN'&&session?.user&&!cloudAuthReady){
+ if(event==='SIGNED_IN'&&session?.user&&!cloudAuthReady&&!loginFlowActive){
   authStateTask=authStateTask.then(async()=>{
    if(cloudAuthReady)return;
    const inviteAccepted=await acceptPendingInvite();
@@ -548,7 +551,14 @@ async function saveUser(editId){
  if(!email)return toast('Email member wajib diisi');if(!name)return toast('Nama member wajib diisi');if(!editId&&password.length<8)return toast('Password awal minimal 8 karakter');if(!bids.length)return toast('Pilih minimal satu cabang');
  if(editId){
   const target=S.users.find(x=>x.id===editId);
-  if(target?.cloud)return toast('Edit member cloud belum tersedia di versi ini. Tidak ada perubahan yang disimpan.');
+  if(target?.cloud){
+   try{
+    const {data:{session}}=await supabaseClient.auth.getSession();if(!session?.access_token)throw new Error('Sesi Owner tidak ditemukan. Login ulang.');
+    const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({action:'update_member',memberUserId:target.authUserId||target.id,companyId:currentCompany().id,name,role:roleKey.toLowerCase(),branchIds:bids,status:document.getElementById('uf_status')?.value==='true'})});
+    const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'Gagal memperbarui member.');
+    await loadCloudUser(session.user);closeModal();render();toast('Member cloud berhasil diperbarui');return;
+   }catch(e){toast(e.message||'Gagal memperbarui member.');return}
+  }
   const status=document.getElementById('uf_status')?.value==='true';
   const o={id:editId,name,email,pin:'',role:roleKey,status,companyIds:[currentCompany().id],branchIds:bids};
   const old=S.users.find(x=>x.id===editId);if(old)o.companyIds=old.companyIds.includes(currentCompany().id)?old.companyIds:[...old.companyIds,currentCompany().id];
@@ -558,6 +568,7 @@ async function saveUser(editId){
   const {data:{session}}=await supabaseClient.auth.getSession();if(!session?.access_token)throw new Error('Sesi Owner tidak ditemukan. Silakan login ulang.');
   const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({email,name,password,role:roleKey.toLowerCase(),branchIds:bids,companyId:currentCompany().id})});
   const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'Gagal mengirim undangan.');
+  const {data:{user:ownerUser}}=await supabaseClient.auth.getUser();if(ownerUser)await loadCloudUser(ownerUser);
   closeModal();render();toast('Akun member berhasil dibuat untuk '+email);
  }catch(e){toast(e.message||'Gagal mengirim undangan member.')}
 }
