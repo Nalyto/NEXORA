@@ -71,6 +71,18 @@ export default async function handler(req,res){
    const patch=decision==='approve'?{payment_status:'approved',order_status:'queued',reviewed_by:user.id,reviewed_at:new Date().toISOString(),rejection_note:null}:{payment_status:'rejected',order_status:'awaiting_payment',reviewed_by:user.id,reviewed_at:new Date().toISOString(),rejection_note:String(body.reason||'Bukti pembayaran belum dapat diverifikasi.').slice(0,300)};
    const {error:ue}=await db.from('online_orders').update(patch).eq('id',orderId);if(ue)throw ue;return send(res,200,{ok:true,orderStatus:patch.order_status,paymentStatus:patch.payment_status});
   }
+  if(action==='owner_transactions'){
+   const companyId=String(body.companyId||''),branchId=body.branchId?String(body.branchId):null;
+   await staffFor(db,req,companyId,branchId,['owner','kasir']);
+   let query=db.from('online_orders').select('id,branch_id,order_number,customer_name,customer_phone,subtotal,total,payment_method,cash_received_amount,cash_change,payment_status,order_status,created_at,customer_note').eq('company_id',companyId).eq('payment_status','approved').in('order_status',['queued','processing','ready','completed']).order('created_at',{ascending:false}).limit(500);
+   if(branchId)query=query.eq('branch_id',branchId);
+   const {data:orders,error:oe}=await query;if(oe)throw oe;
+   const ids=(orders||[]).map(o=>o.id);
+   let items=[];
+   if(ids.length){const {data,error}=await db.from('online_order_items').select('order_id,product_name,quantity,unit_price,line_total').in('order_id',ids);if(error)throw error;items=data||[];}
+   const grouped={};items.forEach(x=>(grouped[x.order_id] ||= []).push(x));
+   return send(res,200,{transactions:(orders||[]).map(o=>({...o,items:grouped[o.id]||[],source:'online_order'}))});
+  }
   if(action==='owner_get_store'){
    const companyId=String(body.companyId||''),branchId=String(body.branchId||'');await ownerFor(db,req,companyId);
    const {data:store,error}=await db.from('online_stores').select('slug,display_name,description,is_published,qris_image_path').eq('company_id',companyId).eq('branch_id',branchId).maybeSingle();if(error)throw error;
