@@ -374,7 +374,6 @@ async function loginSubmit(){
   // Invite acceptance and profile loading must finish before showing the workspace.
   const inviteAccepted=await acceptPendingInvite();
   if(!inviteAccepted)throw new Error('Undangan belum berhasil diproses. Periksa kembali link undangan atau hubungi Owner.');
-  await ensureCloudProfile();
   await loadCloudUser(data.user);
   localStorage.setItem('nexora_login_email',email);
   document.getElementById('authScreen')?.classList.add('hidden');
@@ -401,7 +400,6 @@ supabaseClient.auth.onAuthStateChange((event, session)=>{
    if(cloudAuthReady)return;
    const inviteAccepted=await acceptPendingInvite();
    if(!inviteAccepted)throw new Error('Undangan belum berhasil diproses.');
-   await ensureCloudProfile();
    await loadCloudUser(session.user);render();
   }).catch(e=>{console.error('NEXORA auth state error:',e);toast(e.message||'Sesi NEXORA tidak dapat dimuat.')});
  }
