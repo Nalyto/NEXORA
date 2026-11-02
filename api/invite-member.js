@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Keep one canonical project URL for both browser and server auth flows.
-const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://bejgqjtvkqanzuihby.supabase.co').replace(/\/$/, '');
+const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://bejgqjqjtvkqanzuihby.supabase.co').replace(/\/$/, '');
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function json(res, status, body) {
