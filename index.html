@@ -190,7 +190,14 @@ ensureV2();
 
 function save(){localStorage.setItem(KEY,JSON.stringify(S))}
 function logAudit(action,module,detail){S.auditLogs=S.auditLogs||[];S.auditLogs.unshift({id:id(),userId:currentUser()?.id||null,companyId:currentCompany()?.id||null,branchId:currentBranch()?.id||null,action,module,detail,date:new Date().toISOString()});S.auditLogs=S.auditLogs.slice(0,500);}
-function currentUser(){return S.users.find(x=>x.id===S.currentUserId)||S.users[0]}
+function currentUser(){
+ const u=S.users.find(x=>x.id===S.currentUserId)||S.users[0];
+ if(u?.cloud&&Array.isArray(u.memberships)){
+  const m=u.memberships.find(x=>x.companyId===S.currentCompanyId);
+  if(m){const map={owner:'Owner',manajer:'Manajer',kasir:'Kasir',marketing:'Marketing',gudang:'Gudang'};u.role=map[String(m.role||'').toLowerCase()]||'Kasir';u.branchIds=[...(m.branchIds||[])];}
+ }
+ return u;
+}
 function currentCompany(){return S.companies.find(x=>x.id===S.currentCompanyId)||S.companies[0]}
 function currentBranch(){return S.branches.find(x=>x.id===S.currentBranchId)||S.branches.find(x=>x.companyId===currentCompany()?.id)}
 function companyBranches(cid){return S.branches.filter(x=>x.companyId===cid)}
@@ -309,14 +316,19 @@ async function loadCloudUser(authUser){
  const cloudUsers=rows.map(m=>{
   const p=profileMap[m.user_id]||{};let permitted=linkMap[m.id]||[];
   if(!permitted.length&&['owner','manajer'].includes(String(m.role||'').toLowerCase()))permitted=branchesByCompany[m.company_id]||[];
-  return {id:m.user_id,authUserId:m.user_id,name:p.name||p.email?.split('@')[0]||'Member',email:p.email||'',pin:null,role:roleMap[m.role]||'Kasir',companyIds:[m.company_id],branchIds:[...new Set(permitted)],status:m.status==='active'&&p.status!=='inactive',cloud:true,membershipId:m.id};
+  return {id:m.id,authUserId:m.user_id,name:p.name||p.email?.split('@')[0]||'Member',email:p.email||'',pin:null,role:roleMap[m.role]||'Kasir',companyIds:[m.company_id],branchIds:[...new Set(permitted)],memberships:[{id:m.id,companyId:m.company_id,role:m.role,branchIds:[...new Set(permitted)]}],status:m.status==='active'&&p.status!=='inactive',cloud:true,membershipId:m.id};
  });
  S.users=(S.users||[]).filter(u=>!u.cloud);
  const userMap=new Map();cloudUsers.forEach(u=>userMap.set(u.authUserId||u.id,u));userMap.set(current.authUserId,current);S.users.push(...userMap.values());
  S.companies=(S.companies||[]).filter(c=>!companyIds.includes(c.id)).concat(localCompanies);
  S.branches=(S.branches||[]).filter(b=>!companyIds.includes(b.companyId)).concat(localBranches);
- S.currentUserId=authUser.id;if(!companyIds.includes(S.currentCompanyId))S.currentCompanyId=companyIds[0];
- const selected=localBranches.filter(b=>b.companyId===S.currentCompanyId&&current.branchIds.includes(b.id));
+ S.currentUserId=authUser.id;
+ const preferredMembership=loginMode==='member'?(resolved.find(m=>String(m.role).toLowerCase()!=='owner')||resolved[0]):(resolved.find(m=>String(m.role).toLowerCase()==='owner')||resolved[0]);
+ if(!companyIds.includes(S.currentCompanyId)||!resolved.some(m=>m.company_id===S.currentCompanyId))S.currentCompanyId=preferredMembership.company_id;
+ const activeMembership=resolved.find(m=>m.company_id===S.currentCompanyId)||preferredMembership;
+ current.role=roleMap[activeMembership.role]||'Kasir';current.branchIds=[...activeMembership.branchIds];
+ current.memberships=resolved.map(m=>({id:m.id,companyId:m.company_id,role:m.role,branchIds:m.branchIds}));
+ const selected=localBranches.filter(b=>b.companyId===S.currentCompanyId&&activeMembership.branchIds.includes(b.id));
  if(!selected.some(b=>b.id===S.currentBranchId))S.currentBranchId=selected[0]?.id||null;
  S.session={loggedIn:true,userId:authUser.id,cloud:true};cloudAuthReady=true;save();
 }
