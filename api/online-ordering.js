@@ -34,7 +34,7 @@ export default async function handler(req,res){
    if(name.length>100||phone.length>30||note.length>500)return send(res,400,{error:'Data pelanggan terlalu panjang.'});
    const {data:store,error:se}=await db.from('online_stores').select('id,company_id,branch_id,is_published,table_number_enabled,table_number_options').eq('slug',slug).eq('is_published',true).maybeSingle();if(se)throw se;if(!store)return send(res,404,{error:'Toko tidak tersedia.'});
    if(store.table_number_enabled&&!tableNumber)return send(res,400,{error:'Nomor meja wajib dipilih atau diisi.'});
-   if(body.tableNumberSource==='qr'&&(!tableNumber||!(store.table_number_options||[]).includes(tableNumber)))return send(res,400,{error:'Nomor meja dari QR Code tidak valid. Scan ulang QR meja.'});
+   if(body.tableNumberSource==='qr'&&(!store.table_number_enabled||!tableNumber||!(store.table_number_options||[]).includes(tableNumber)))return send(res,400,{error:'Nomor meja dari QR Code tidak valid atau sudah dinonaktifkan. Scan ulang QR meja.'});
    if(tableNumber&&body.tableNumberSource==='dropdown'&&Array.isArray(store.table_number_options)&&store.table_number_options.length&&!store.table_number_options.includes(tableNumber))return send(res,400,{error:'Pilihan nomor meja tidak valid.'});
    const ids=[...new Set(items.map(x=>String(x.productId||'')))];if(ids.some(x=>!x))return send(res,400,{error:'Item pesanan tidak valid.'});
    const {data:products,error:pe}=await db.from('online_store_products').select('source_product_id,name,price,is_active').eq('store_id',store.id).eq('is_active',true).in('source_product_id',ids);if(pe)throw pe;
