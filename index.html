@@ -928,10 +928,10 @@ function productionForm(pid){
 function productionPreview(){
  const pid=document.getElementById('pr_product').value,q=+document.getElementById('pr_qty').value||0,r=v2Recipe(pid),missing=(r?.items||[]).map(i=>{const p=S.products.find(x=>x.id===i.productId),need=i.qty*q;return {p,need,ok:(p?.stock||0)>=need}}).filter(x=>!x.ok);document.getElementById('productionPreview').innerHTML=missing.length?'⚠️ Bahan kurang: <b>'+missing.map(x=>esc(x.p?.name||'')).join(', ')+'</b>':'Semua bahan tersedia. HPP batch: <b>'+money(recipeCost(pid)*q)+'</b>';
 }
-function saveProduction(){
+async function saveProduction(){
  const pid=document.getElementById('pr_product').value,q=+document.getElementById('pr_qty').value||0,r=v2Recipe(pid),p=S.products.find(x=>x.id===pid);if(!p||!r||q<=0)return toast('Data produksi tidak valid');
  for(const i of r.items){const b=S.products.find(x=>x.id===i.productId);if(!b||b.stock<i.qty*q)return toast('Stok bahan tidak cukup: '+(b?.name||''))}
- const date=new Date().toISOString();for(const i of r.items){const b=S.products.find(x=>x.id===i.productId);b.stock-=i.qty*q;S.movements.unshift({id:id(),companyId:currentCompany().id,branchId:currentBranch().id,productId:b.id,type:'OUT',qty:i.qty*q,note:'Produksi '+p.name,date})}
+ const date=new Date().toISOString();if(currentUser()?.cloud){try{const changes=r.items.map(i=>({legacyId:i.productId,delta:-i.qty*q}));changes.push({legacyId:p.id,delta:q});await cloudProductsRequest('adjust_stock',currentCompany().id,{changes});}catch(e){return toast('Produksi dibatalkan: stok cloud gagal diperbarui: '+e.message)}}for(const i of r.items){const b=S.products.find(x=>x.id===i.productId);b.stock-=i.qty*q;S.movements.unshift({id:id(),companyId:currentCompany().id,branchId:currentBranch().id,productId:b.id,type:'OUT',qty:i.qty*q,note:'Produksi '+p.name,date})}
  p.stock+=q;S.movements.unshift({id:id(),companyId:currentCompany().id,branchId:currentBranch().id,productId:p.id,type:'IN',qty:q,note:'Hasil produksi',date});
  S.production.unshift({id:id(),companyId:currentCompany().id,branchId:currentBranch().id,productId:pid,qty:q,hpp:recipeCost(pid),date});v2SyncHPP(pid);save();closeModal();render();toast('Produksi berhasil dicatat');
 }
@@ -989,10 +989,11 @@ function drawPurchaseRows(){
  el.innerHTML=purchaseRows.map((r,i)=>'<div class="listItem" style="margin-bottom:8px"><select onchange="purchaseRows['+i+'].productId=this.value;drawPurchaseRows()">'+ps.map(p=>'<option value="'+p.id+'" '+(p.id===r.productId?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select><input style="max-width:90px" type="number" min="1" value="'+r.qty+'" onchange="purchaseRows['+i+'].qty=+this.value||1;drawPurchaseRows()"><input style="max-width:130px" type="number" min="0" value="'+r.cost+'" onchange="purchaseRows['+i+'].cost=+this.value||0;drawPurchaseRows()"><button class="dangerBtn" onclick="purchaseRows.splice('+i+',1);drawPurchaseRows()">×</button></div>').join('');
  const total=purchaseRows.reduce((a,r)=>a+r.qty*r.cost,0);document.getElementById('purchaseTotal').innerHTML='Total pembelian: <b>'+money(total)+'</b> · '+purchaseRows.length+' item';
 }
-function savePurchase(){
+async function savePurchase(){
  if(!requirePermission('managePurchases'))return;
  if(!purchaseRows.length)return toast('Tambahkan minimal satu item');const clean=purchaseRows.filter(x=>x.productId&&x.qty>0&&x.cost>=0);if(!clean.length)return toast('Item pembelian tidak valid');
  const total=clean.reduce((a,r)=>a+r.qty*r.cost,0),date=new Date().toISOString(),no='PO-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+String((S.purchases||[]).length+1).padStart(4,'0');
+ if(currentUser()?.cloud){try{const merged=new Map();clean.forEach(r=>merged.set(r.productId,(merged.get(r.productId)||0)+r.qty));await cloudProductsRequest('adjust_stock',currentCompany().id,{changes:[...merged].map(([legacyId,delta])=>({legacyId,delta}))});for(const r of clean){const p=S.products.find(x=>x.id===r.productId);if(p)await cloudProductsRequest('upsert',currentCompany().id,{product:{...p,cost:r.cost}});}}catch(e){return toast('Pembelian dibatalkan: sinkronisasi cloud gagal: '+e.message)}}
  clean.forEach(r=>{const p=S.products.find(x=>x.id===r.productId);if(p){p.stock=(p.stock||0)+r.qty;p.cost=r.cost;S.movements.unshift({id:id(),companyId:currentCompany().id,branchId:currentBranch().id,productId:p.id,type:'IN',qty:r.qty,note:'Pembelian '+no,date})}});
  S.purchases.unshift({id:id(),no,companyId:currentCompany().id,branchId:currentBranch().id,supplierId:document.getElementById('puf_supplier').value,items:clean,total,date,status:'Diterima'});
  logAudit('Mencatat pembelian','Pembelian',no+' · '+money(total));save();closeModal();render();toast('Pembelian berhasil diterima dan stok bertambah');
