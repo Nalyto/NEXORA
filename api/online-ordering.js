@@ -20,10 +20,12 @@ export default async function handler(req,res){
    const slug=slugify(body.slug);if(!slug)return send(res,400,{error:'Link toko tidak valid.'});
    const {data:store,error}=await db.from('online_stores').select('id,slug,display_name,description,company_id,branch_id,qris_image_path,is_published,table_number_enabled,table_number_options').eq('slug',slug).eq('is_published',true).maybeSingle();
    if(error)throw error;if(!store)return send(res,404,{error:'Toko tidak ditemukan atau belum dipublikasikan.'});
+   const requestedTable=String(body.tableNumber||'').trim();
+   if(requestedTable&&(!store.table_number_enabled||!(store.table_number_options||[]).includes(requestedTable)))return send(res,404,{error:'QR meja tidak valid atau meja tidak tersedia.'});
    const {data:products,error:pe}=await db.from('online_store_products').select('source_product_id,name,description,category,image_url,price').eq('store_id',store.id).eq('is_active',true).order('sort_order');
    if(pe)throw pe;let qrisUrl=null;
    if(store.qris_image_path){const {data:signed,error:se}=await db.storage.from(BUCKET).createSignedUrl(store.qris_image_path,3600);if(!se)qrisUrl=signed.signedUrl;}
-   return send(res,200,{store:{slug:store.slug,name:store.display_name||'Toko NEXORA',description:store.description||'',tableNumberEnabled:!!store.table_number_enabled,tableNumberOptions:store.table_number_options||[]},products:products||[],qrisUrl});
+   return send(res,200,{store:{slug:store.slug,name:store.display_name||'Toko NEXORA',description:store.description||'',tableNumberEnabled:!!store.table_number_enabled,tableNumberOptions:store.table_number_options||[],tableNumber:requestedTable||null},products:products||[],qrisUrl});
   }
   if(action==='create_order'){
    const slug=slugify(body.slug),name=String(body.customerName||'').trim(),phone=String(body.customerPhone||'').trim(),note=String(body.note||'').trim(),items=Array.isArray(body.items)?body.items:[];
@@ -32,6 +34,7 @@ export default async function handler(req,res){
    if(name.length>100||phone.length>30||note.length>500)return send(res,400,{error:'Data pelanggan terlalu panjang.'});
    const {data:store,error:se}=await db.from('online_stores').select('id,company_id,branch_id,is_published,table_number_enabled,table_number_options').eq('slug',slug).eq('is_published',true).maybeSingle();if(se)throw se;if(!store)return send(res,404,{error:'Toko tidak tersedia.'});
    if(store.table_number_enabled&&!tableNumber)return send(res,400,{error:'Nomor meja wajib dipilih atau diisi.'});
+   if(body.tableNumberSource==='qr'&&(!tableNumber||!(store.table_number_options||[]).includes(tableNumber)))return send(res,400,{error:'Nomor meja dari QR Code tidak valid. Scan ulang QR meja.'});
    if(tableNumber&&body.tableNumberSource==='dropdown'&&Array.isArray(store.table_number_options)&&store.table_number_options.length&&!store.table_number_options.includes(tableNumber))return send(res,400,{error:'Pilihan nomor meja tidak valid.'});
    const ids=[...new Set(items.map(x=>String(x.productId||'')))];if(ids.some(x=>!x))return send(res,400,{error:'Item pesanan tidak valid.'});
    const {data:products,error:pe}=await db.from('online_store_products').select('source_product_id,name,price,is_active').eq('store_id',store.id).eq('is_active',true).in('source_product_id',ids);if(pe)throw pe;
