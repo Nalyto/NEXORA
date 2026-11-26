@@ -298,6 +298,9 @@ async function signupSubmit(){
    if(errorEl)errorEl.textContent='Akun dibuat, tetapi setup perusahaan gagal: '+(e.message||'Silakan login lagi.');
  }
 }
+async function cloudProductsRequest(action,companyId,payload={}){const {data:{session}}=await supabaseClient.auth.getSession();if(!session?.access_token)throw new Error('Sesi login tidak ditemukan.');const response=await fetch('/api/products',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({action,companyId,...payload})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'Sinkronisasi produk gagal.');return result;}
+function mapCloudProduct(p,companyId){return {id:p.legacy_id,companyId,name:p.name,type:p.type==='Layanan'?'Layanan':'Produk',category:p.category||'Umum',price:Number(p.price)||0,cost:Number(p.cost)||0,stock:Number(p.stock)||0,status:p.is_active!==false,active:p.is_active!==false,cloud:true};}
+async function refreshCloudProducts(companyId=currentCompany()?.id){if(!companyId)return;const result=await cloudProductsRequest('list',companyId);S.products=(S.products||[]).filter(p=>p.companyId!==companyId).concat((result.products||[]).map(p=>mapCloudProduct(p,companyId)));save();return result.products||[];}
 async function loadCloudUser(authUser){
  const cloud=await ensureCloudProfile();
  const roleMap={owner:'Owner',manajer:'Manajer',kasir:'Kasir',marketing:'Marketing',gudang:'Gudang'};
@@ -310,6 +313,18 @@ async function loadCloudUser(authUser){
  const linkMap={};links.forEach(x=>(linkMap[x.company_user_id] ||= []).push(x.branch_id));
  const localCompanies=companies.map(c=>({id:c.id,name:c.name,type:c.type==='barang_jasa'?'Barang + Jasa':c.type==='barang'?'Barang':'Jasa',logo:c.logo_url||'',phone:c.phone||'',email:c.email||'',address:c.address||'',tax:Number(c.tax_percent||0)}));
  const localBranches=branches.map(b=>({id:b.id,companyId:b.company_id,name:b.name,code:b.code,address:b.address||'',phone:b.phone||'',status:b.is_active!==false}));
+ // One-time migration: import this browser's legacy catalog only when the cloud company has no products yet.
+ for(const dbCompany of companies){
+  const localCompany=(S.companies||[]).find(x=>String(x.name||'').trim().toLowerCase()===String(dbCompany.name||'').trim().toLowerCase());
+  if(!localCompany)continue;
+  const localProducts=(S.products||[]).filter(p=>p.companyId===localCompany.id);
+  const hasOwner=memberships.some(m=>m.company_id===dbCompany.id&&String(m.role).toLowerCase()==='owner');
+  const {products:existingProducts=[]}=await cloudProductsRequest('list',dbCompany.id);
+  if(!existingProducts.length&&localProducts.length&&hasOwner)await cloudProductsRequest('import_legacy',dbCompany.id,{products:localProducts});
+ }
+ const cloudProducts=[];
+ for(const dbCompany of companies){const result=await cloudProductsRequest('list',dbCompany.id);cloudProducts.push(...(result.products||[]).map(p=>mapCloudProduct(p,dbCompany.id)));}
+
  const branchesByCompany={};localBranches.forEach(b=>(branchesByCompany[b.companyId] ||= []).push(b.id));
  const resolved=memberships.map(m=>{
   let permitted=linkMap[m.id]||[];
@@ -327,6 +342,7 @@ async function loadCloudUser(authUser){
  const userMap=new Map();cloudUsers.forEach(u=>userMap.set(u.authUserId||u.id,u));userMap.set(current.authUserId,current);S.users.push(...userMap.values());
  S.companies=(S.companies||[]).filter(c=>!companyIds.includes(c.id)).concat(localCompanies);
  S.branches=(S.branches||[]).filter(b=>!companyIds.includes(b.companyId)).concat(localBranches);
+ S.products=(S.products||[]).filter(p=>!companyIds.includes(p.companyId)).concat(cloudProducts);
  S.currentUserId=authUser.id;
  const preferredMembership=loginMode==='member'?(resolved.find(m=>String(m.role).toLowerCase()!=='owner')||resolved[0]):(resolved.find(m=>String(m.role).toLowerCase()==='owner')||resolved[0]);
  if(!companyIds.includes(S.currentCompanyId)||!resolved.some(m=>m.company_id===S.currentCompanyId))S.currentCompanyId=preferredMembership.company_id;
