@@ -94,7 +94,7 @@ export default async function handler(req,res){
    const companyId=String(body.companyId||''),branchId=body.branchId?String(body.branchId):null;
    const {role}=await staffFor(db,req,companyId,branchId,['owner','kasir']);
    if(role!=='owner'&&!branchId)return send(res,403,{error:'Kasir hanya dapat melihat transaksi cabang yang ditugaskan.'});
-   let query=db.from('online_orders').select('id,branch_id,order_number,customer_name,customer_phone,table_number,subtotal,total,payment_method,cash_received_amount,cash_change,payment_status,order_status,created_at,customer_note').eq('company_id',companyId).eq('payment_status','approved').in('order_status',['queued','processing','ready','completed']).order('created_at',{ascending:false}).limit(500);
+   let query=db.from('online_orders').select('id,branch_id,order_number,customer_name,customer_phone,table_number,subtotal,total,payment_method,cash_received_amount,cash_change,payment_status,order_status,created_at,customer_note').eq('company_id',companyId).eq('payment_status','approved').in('order_status',['queued','processing','ready','shipped','completed']).order('created_at',{ascending:false}).limit(500);
    if(branchId)query=query.eq('branch_id',branchId);
    const {data:orders,error:oe}=await query;if(oe)throw oe;
    const ids=(orders||[]).map(o=>o.id);
