@@ -29,7 +29,7 @@ export default async function handler(req,res){
   }
   if(action==='create_order'){
    const slug=slugify(body.slug),name=String(body.customerName||'').trim(),phone=String(body.customerPhone||'').trim(),note=String(body.note||'').trim(),items=Array.isArray(body.items)?body.items:[];
-   if(!slug||!name||!phone||!items.length||items.length>50)return send(res,400,{error:'Lengkapi nama, nomor WhatsApp, dan keranjang pesanan.'});
+   if(!slug||!name||!items.length||items.length>50)return send(res,400,{error:'Lengkapi nama dan keranjang pesanan.'});
    const tableNumber=String(body.tableNumber||'').trim().slice(0,30);
    if(name.length>100||phone.length>30||note.length>500)return send(res,400,{error:'Data pelanggan terlalu panjang.'});
    const {data:store,error:se}=await db.from('online_stores').select('id,company_id,branch_id,is_published,table_number_enabled,table_number_options').eq('slug',slug).eq('is_published',true).maybeSingle();if(se)throw se;if(!store)return send(res,404,{error:'Toko tidak tersedia.'});
