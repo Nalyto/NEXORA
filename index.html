@@ -1018,7 +1018,7 @@ function onlineFileData(file){return new Promise((resolve,reject)=>{const r=new 
 let onlineOrderSnapshot=null,onlineOrderPoller=null;
 function stopOnlineOrderPolling(){if(onlineOrderPoller){clearInterval(onlineOrderPoller);onlineOrderPoller=null;}onlineOrderSnapshot=null;}
 async function onlineOrdering(){
- stopOnlineOrderPolling();
+ stopOnlineOrderPolling();if('Notification'in window&&Notification.permission==='default')Notification.requestPermission().catch(()=>{});
  const c=currentCompany(),b=currentBranch();if(!c||!b)return toast('Pilih perusahaan dan cabang terlebih dahulu.');
  if(!['Owner','Kasir'].includes(currentUser()?.role))return toast('Menu ini hanya dapat diakses Owner dan Kasir.');
  const slug=(c.name+'-'+b.name).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
