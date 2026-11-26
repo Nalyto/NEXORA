@@ -18,27 +18,36 @@ export default async function handler(req,res){
   const body=req.body||{},action=body.action;
   if(action==='public_store'){
    const slug=slugify(body.slug);if(!slug)return send(res,400,{error:'Link toko tidak valid.'});
-   const {data:store,error}=await db.from('online_stores').select('id,slug,display_name,description,company_id,branch_id,qris_image_path,is_published').eq('slug',slug).eq('is_published',true).maybeSingle();
+   const {data:store,error}=await db.from('online_stores').select('id,slug,display_name,description,company_id,branch_id,qris_image_path,is_published,table_number_enabled,table_number_options').eq('slug',slug).eq('is_published',true).maybeSingle();
    if(error)throw error;if(!store)return send(res,404,{error:'Toko tidak ditemukan atau belum dipublikasikan.'});
    const {data:products,error:pe}=await db.from('online_store_products').select('source_product_id,name,description,category,image_url,price').eq('store_id',store.id).eq('is_active',true).order('sort_order');
    if(pe)throw pe;let qrisUrl=null;
    if(store.qris_image_path){const {data:signed,error:se}=await db.storage.from(BUCKET).createSignedUrl(store.qris_image_path,3600);if(!se)qrisUrl=signed.signedUrl;}
-   return send(res,200,{store:{slug:store.slug,name:store.display_name||'Toko NEXORA',description:store.description||''},products:products||[],qrisUrl});
+   return send(res,200,{store:{slug:store.slug,name:store.display_name||'Toko NEXORA',description:store.description||'',tableNumberEnabled:!!store.table_number_enabled,tableNumberOptions:store.table_number_options||[]},products:products||[],qrisUrl});
   }
   if(action==='create_order'){
    const slug=slugify(body.slug),name=String(body.customerName||'').trim(),phone=String(body.customerPhone||'').trim(),note=String(body.note||'').trim(),items=Array.isArray(body.items)?body.items:[];
    if(!slug||!name||!phone||!items.length||items.length>50)return send(res,400,{error:'Lengkapi nama, nomor WhatsApp, dan keranjang pesanan.'});
+   const tableNumber=String(body.tableNumber||'').trim().slice(0,30);
    if(name.length>100||phone.length>30||note.length>500)return send(res,400,{error:'Data pelanggan terlalu panjang.'});
-   const {data:store,error:se}=await db.from('online_stores').select('id,company_id,branch_id,is_published').eq('slug',slug).eq('is_published',true).maybeSingle();if(se)throw se;if(!store)return send(res,404,{error:'Toko tidak tersedia.'});
+   const {data:store,error:se}=await db.from('online_stores').select('id,company_id,branch_id,is_published,table_number_enabled,table_number_options').eq('slug',slug).eq('is_published',true).maybeSingle();if(se)throw se;if(!store)return send(res,404,{error:'Toko tidak tersedia.'});
+   if(store.table_number_enabled&&!tableNumber)return send(res,400,{error:'Nomor meja wajib dipilih atau diisi.'});
+   if(tableNumber&&body.tableNumberSource==='dropdown'&&Array.isArray(store.table_number_options)&&store.table_number_options.length&&!store.table_number_options.includes(tableNumber))return send(res,400,{error:'Pilihan nomor meja tidak valid.'});
    const ids=[...new Set(items.map(x=>String(x.productId||'')))];if(ids.some(x=>!x))return send(res,400,{error:'Item pesanan tidak valid.'});
    const {data:products,error:pe}=await db.from('online_store_products').select('source_product_id,name,price,is_active').eq('store_id',store.id).eq('is_active',true).in('source_product_id',ids);if(pe)throw pe;
    if((products||[]).length!==ids.length)return send(res,400,{error:'Ada produk yang sudah tidak tersedia. Muat ulang toko.'});
    const byId=Object.fromEntries(products.map(p=>[p.source_product_id,p]));let lines=[],subtotal=0;
    for(const item of items){const p=byId[String(item.productId)],qty=Math.floor(Number(item.quantity));if(!p||!Number.isFinite(qty)||qty<1||qty>99)return send(res,400,{error:'Jumlah produk tidak valid.'});const line=p.price*qty;subtotal+=line;lines.push({source_product_id:p.source_product_id,product_name:p.name,unit_price:p.price,quantity:qty,line_total:line});}
    const method=body.paymentMethod==='cash'?'cash':'qris_static';const orderNo='ONL-'+Date.now().toString().slice(-8)+'-'+Math.random().toString(36).slice(2,5).toUpperCase();const uniqueCode=method==='cash'?'NX'+String(Math.floor(100000+Math.random()*900000)):null;
-   const {data:order,error:oe}=await db.from('online_orders').insert({store_id:store.id,company_id:store.company_id,branch_id:store.branch_id,order_number:orderNo,unique_code:uniqueCode,payment_method:method,payment_status:method==='cash'?'awaiting_cash':'awaiting_payment',order_status:method==='cash'?'awaiting_cash':'awaiting_payment',customer_name:name,customer_phone:phone,customer_note:note,subtotal,total:subtotal}).select('id,public_token,order_number,total,unique_code,payment_method').single();if(oe)throw oe;
+   const {data:order,error:oe}=await db.from('online_orders').insert({store_id:store.id,company_id:store.company_id,branch_id:store.branch_id,order_number:orderNo,unique_code:uniqueCode,payment_method:method,payment_status:method==='cash'?'awaiting_cash':'awaiting_payment',order_status:method==='cash'?'awaiting_cash':'awaiting_payment',customer_name:name,customer_phone:phone,customer_note:note,table_number:store.table_number_enabled?(tableNumber||null):null,subtotal,total:subtotal}).select('id,public_token,order_number,total,unique_code,payment_method').single();if(oe)throw oe;
    const {error:ie}=await db.from('online_order_items').insert(lines.map(x=>({...x,order_id:order.id})));if(ie){await db.from('online_orders').delete().eq('id',order.id);throw ie;}
    return send(res,200,{order:{token:order.public_token,number:order.order_number,total:order.total,uniqueCode:order.unique_code,paymentMethod:order.payment_method}});
+  }
+  if(action==='get_order_status'){
+   const token=String(body.token||'');if(!token)return send(res,400,{error:'Kode pesanan tidak valid.'});
+   const {data:order,error:oe}=await db.from('online_orders').select('order_number,payment_status,order_status,table_number,rejection_note,updated_at').eq('public_token',token).maybeSingle();if(oe)throw oe;if(!order)return send(res,404,{error:'Pesanan tidak ditemukan.'});
+   const labels={awaiting_payment:'Menunggu pembayaran',awaiting_cash:'Menunggu pembayaran di kasir',awaiting_verification:'Bukti pembayaran diterima, menunggu verifikasi',queued:'Pembayaran disetujui, pesanan masuk antrean',processing:'Pesanan sedang diproses',ready:'Pesanan siap',shipped:'Pesanan telah dikirim',completed:'Pesanan selesai',cancelled:'Pesanan dibatalkan'};
+   return send(res,200,{orderNumber:order.order_number,paymentStatus:order.payment_status,orderStatus:order.order_status,label:labels[order.order_status]||order.order_status,tableNumber:order.table_number||null,rejectionNote:order.rejection_note||null,updatedAt:order.updated_at});
   }
   if(action==='cancel_order'){
    const token=String(body.token||'');if(!token)return send(res,400,{error:'Kode pesanan tidak valid.'});
@@ -71,11 +80,21 @@ export default async function handler(req,res){
    const patch=decision==='approve'?{payment_status:'approved',order_status:'queued',reviewed_by:user.id,reviewed_at:new Date().toISOString(),rejection_note:null}:{payment_status:'rejected',order_status:'awaiting_payment',reviewed_by:user.id,reviewed_at:new Date().toISOString(),rejection_note:String(body.reason||'Bukti pembayaran belum dapat diverifikasi.').slice(0,300)};
    const {error:ue}=await db.from('online_orders').update(patch).eq('id',orderId);if(ue)throw ue;return send(res,200,{ok:true,orderStatus:patch.order_status,paymentStatus:patch.payment_status});
   }
+  if(action==='update_order_status'){
+   const companyId=String(body.companyId||''),orderId=String(body.orderId||''),nextStatus=String(body.orderStatus||'');
+   await staffFor(db,req,companyId,body.branchId?String(body.branchId):null,['owner','kasir']);
+   if(!['processing','ready','shipped','completed'].includes(nextStatus))return send(res,400,{error:'Status pesanan tidak valid.'});
+   const {data:order,error:oe}=await db.from('online_orders').select('id,payment_status,order_status').eq('id',orderId).eq('company_id',companyId).maybeSingle();if(oe)throw oe;if(!order)return send(res,404,{error:'Pesanan tidak ditemukan.'});
+   if(order.payment_status!=='approved'||!['queued','processing','ready','shipped'].includes(order.order_status))return send(res,409,{error:'Pesanan belum dibayar atau sudah selesai.'});
+   const allowed={queued:['processing'],processing:['ready'],ready:['shipped','completed'],shipped:['completed']};if(!(allowed[order.order_status]||[]).includes(nextStatus))return send(res,409,{error:'Perubahan status tidak sesuai urutan.'});
+   const {error:ue}=await db.from('online_orders').update({order_status:nextStatus,updated_at:new Date().toISOString()}).eq('id',orderId);if(ue)throw ue;
+   return send(res,200,{ok:true,orderStatus:nextStatus});
+  }
   if(action==='owner_transactions'){
    const companyId=String(body.companyId||''),branchId=body.branchId?String(body.branchId):null;
    const {role}=await staffFor(db,req,companyId,branchId,['owner','kasir']);
    if(role!=='owner'&&!branchId)return send(res,403,{error:'Kasir hanya dapat melihat transaksi cabang yang ditugaskan.'});
-   let query=db.from('online_orders').select('id,branch_id,order_number,customer_name,customer_phone,subtotal,total,payment_method,cash_received_amount,cash_change,payment_status,order_status,created_at,customer_note').eq('company_id',companyId).eq('payment_status','approved').in('order_status',['queued','processing','ready','completed']).order('created_at',{ascending:false}).limit(500);
+   let query=db.from('online_orders').select('id,branch_id,order_number,customer_name,customer_phone,table_number,subtotal,total,payment_method,cash_received_amount,cash_change,payment_status,order_status,created_at,customer_note').eq('company_id',companyId).eq('payment_status','approved').in('order_status',['queued','processing','ready','completed']).order('created_at',{ascending:false}).limit(500);
    if(branchId)query=query.eq('branch_id',branchId);
    const {data:orders,error:oe}=await query;if(oe)throw oe;
    const ids=(orders||[]).map(o=>o.id);
@@ -86,12 +105,12 @@ export default async function handler(req,res){
   }
   if(action==='owner_get_store'){
    const companyId=String(body.companyId||''),branchId=String(body.branchId||'');await ownerFor(db,req,companyId);
-   const {data:store,error}=await db.from('online_stores').select('slug,display_name,description,is_published,qris_image_path').eq('company_id',companyId).eq('branch_id',branchId).maybeSingle();if(error)throw error;
-   return send(res,200,{store:store?{slug:store.slug,displayName:store.display_name,description:store.description,isPublished:store.is_published,hasQris:!!store.qris_image_path}:null});
+   const {data:store,error}=await db.from('online_stores').select('slug,display_name,description,is_published,qris_image_path,table_number_enabled,table_number_options').eq('company_id',companyId).eq('branch_id',branchId).maybeSingle();if(error)throw error;
+   return send(res,200,{store:store?{slug:store.slug,displayName:store.display_name,description:store.description,isPublished:store.is_published,hasQris:!!store.qris_image_path,tableNumberEnabled:!!store.table_number_enabled,tableNumberOptions:store.table_number_options||[]}:null});
   }
   if(action==='owner_list'){
    const companyId=String(body.companyId||''),branchId=body.branchId?String(body.branchId):null,{user}=await staffFor(db,req,companyId,branchId,['owner','kasir']);
-   let query=db.from('online_orders').select('id,branch_id,order_number,unique_code,payment_method,cash_received_amount,cash_change,customer_name,customer_phone,total,payment_status,order_status,created_at,payment_proof_path,customer_note').eq('company_id',companyId).order('created_at',{ascending:false}).limit(100);
+   let query=db.from('online_orders').select('id,branch_id,order_number,unique_code,payment_method,cash_received_amount,cash_change,customer_name,customer_phone,total,payment_status,order_status,created_at,payment_proof_path,customer_note,table_number').eq('company_id',companyId).order('created_at',{ascending:false}).limit(100);
    if(branchId)query=query.eq('branch_id',branchId);
    const {data:orders,error}=await query;if(error)throw error;
    const withProof=await Promise.all((orders||[]).map(async o=>{if(!o.payment_proof_path)return {...o,paymentProofUrl:null};const {data:s}=await db.storage.from(BUCKET).createSignedUrl(o.payment_proof_path,900);return {...o,paymentProofUrl:s?.signedUrl||null};}));
@@ -102,7 +121,8 @@ export default async function handler(req,res){
    const slug=slugify(body.slug);if(!slug||!branchId)return send(res,400,{error:'Slug dan cabang wajib diisi.'});
    const {data:branch,error:be}=await db.from('branches').select('id').eq('id',branchId).eq('company_id',companyId).maybeSingle();if(be)throw be;if(!branch)return send(res,400,{error:'Cabang tidak valid.'});
    let {data:existing,error:ee}=await db.from('online_stores').select('id').eq('company_id',companyId).eq('branch_id',branchId).maybeSingle();if(ee)throw ee;
-   const payload={company_id:companyId,branch_id:branchId,slug,display_name:String(body.displayName||'').trim().slice(0,100)||'Toko Online',description:String(body.description||'').trim().slice(0,500),is_published:body.isPublished===true,updated_at:new Date().toISOString()};
+   const tableNumberOptions=Array.isArray(body.tableNumberOptions)?body.tableNumberOptions.map(x=>String(x).trim().slice(0,30)).filter(Boolean).slice(0,100):[];
+   const payload={company_id:companyId,branch_id:branchId,slug,table_number_enabled:body.tableNumberEnabled===true,table_number_options:tableNumberOptions,display_name:String(body.displayName||'').trim().slice(0,100)||'Toko Online',description:String(body.description||'').trim().slice(0,500),is_published:body.isPublished===true,updated_at:new Date().toISOString()};
    if(body.qrisImageData){const img=decodeImage(body.qrisImageData),path='qris/'+companyId+'/'+branchId+'/'+Date.now()+'.'+img.ext;const {error:up}=await db.storage.from(BUCKET).upload(path,img.bytes,{contentType:img.mime,upsert:false});if(up)throw up;payload.qris_image_path=path;}
    if(body.isPublished===true&&!payload.qris_image_path&&existing){const {data:oldStore,error:oldError}=await db.from('online_stores').select('qris_image_path').eq('id',existing.id).single();if(oldError)throw oldError;if(!oldStore.qris_image_path)return send(res,400,{error:'Upload QRIS terlebih dahulu sebelum mempublikasikan toko.'});}else if(body.isPublished===true&&!payload.qris_image_path&&!existing){return send(res,400,{error:'Upload QRIS terlebih dahulu sebelum mempublikasikan toko.'});}
    let result;if(existing){result=await db.from('online_stores').update(payload).eq('id',existing.id).select('id,slug,is_published').single();}else{result=await db.from('online_stores').insert(payload).select('id,slug,is_published').single();}
