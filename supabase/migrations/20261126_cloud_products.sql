@@ -54,3 +54,33 @@ revoke all on function public.nexora_adjust_product_stock(uuid,text,numeric,nume
 grant execute on function public.nexora_adjust_product_stock(uuid,text,numeric,numeric) to service_role;
 
 comment on table public.products is 'Shared NEXORA product and service catalog. Stock is company-wide across branches in V1.';
+
+create or replace function public.nexora_apply_product_stock_changes(
+  p_company_id uuid,
+  p_changes jsonb
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare item jsonb; result jsonb := '[]'::jsonb; new_stock numeric(14,3);
+begin
+  if jsonb_typeof(p_changes) <> 'array' then raise exception 'Format perubahan stok tidak valid.'; end if;
+  for item in select * from jsonb_array_elements(p_changes) loop
+    update public.products
+       set stock = case
+         when item ? 'setStock' and item->>'setStock' is not null then greatest(0,(item->>'setStock')::numeric)
+         else greatest(0,stock + coalesce((item->>'delta')::numeric,0))
+       end,
+       updated_at = now()
+     where company_id = p_company_id and legacy_id = item->>'legacyId' and is_active = true
+     returning stock into new_stock;
+    if new_stock is null then raise exception 'Produk tidak ditemukan: %', item->>'legacyId'; end if;
+    result := result || jsonb_build_array(jsonb_build_object('legacyId',item->>'legacyId','stock',new_stock));
+    new_stock := null;
+  end loop;
+  return result;
+end;
+$$;
+revoke all on function public.nexora_apply_product_stock_changes(uuid,jsonb) from public, anon, authenticated;
+grant execute on function public.nexora_apply_product_stock_changes(uuid,jsonb) to service_role;
