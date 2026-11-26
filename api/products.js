@@ -46,11 +46,11 @@ export default async function handler(req,res){
    return json(res,200,{ok:true,saved:data?.length||0});
   }
   if(action==='adjust_stock'){
-   const {legacyId,delta,setStock}=req.body||{};
-   if(!legacyId)return json(res,400,{error:'ID produk tidak ditemukan.'});
-   const {data,error}=await db.rpc('nexora_adjust_product_stock',{p_company_id:companyId,p_legacy_id:String(legacyId),p_delta:Number(delta)||0,p_set_stock:setStock===undefined||setStock===null?null:Number(setStock)});
+   const changes=Array.isArray(req.body?.changes)?req.body.changes:[{legacyId:req.body?.legacyId,delta:req.body?.delta,setStock:req.body?.setStock}];
+   if(!changes.length||changes.length>500||changes.some(x=>!x.legacyId))return json(res,400,{error:'Daftar perubahan stok tidak valid.'});
+   const {data,error}=await db.rpc('nexora_apply_product_stock_changes',{p_company_id:companyId,p_changes:changes.map(x=>({legacyId:String(x.legacyId),delta:Number(x.delta)||0,setStock:x.setStock===undefined||x.setStock===null?null:Number(x.setStock)}))});
    if(error)throw error;
-   return json(res,200,{ok:true,stock:data});
+   return json(res,200,{ok:true,changes:data||[]});
   }
   if(action==='deactivate'){
    if(!canManage)return json(res,403,{error:'Hanya Owner atau Manajer yang dapat menonaktifkan produk.'});
