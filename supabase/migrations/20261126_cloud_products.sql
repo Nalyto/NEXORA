@@ -76,6 +76,7 @@ begin
      where company_id = p_company_id and legacy_id = item->>'legacyId' and is_active = true
      returning stock into new_stock;
     if new_stock is null then raise exception 'Produk tidak ditemukan: %', item->>'legacyId'; end if;
+    if new_stock < 0 then raise exception 'Stok tidak mencukupi untuk produk %.', item->>'legacyId'; end if;
     result := result || jsonb_build_array(jsonb_build_object('legacyId',item->>'legacyId','stock',new_stock));
     new_stock := null;
   end loop;
