@@ -564,6 +564,7 @@ function userForm(editId){
  document.getElementById('uf_role').value=u.role;
  if(!isInvite)document.getElementById('uf_status').value=String(u.status!==false);
 }
+async function resolveCloudMemberTargets(){const localCompany=currentCompany(),{data:{user},error:userError}=await supabaseClient.auth.getUser();if(userError||!user)throw new Error('Sesi login tidak valid. Silakan login ulang.');const {data:members,error:memberError}=await supabaseClient.from('company_users').select('company_id,role,status').eq('user_id',user.id).eq('status','active');if(memberError)throw memberError;let companyIds=(members||[]).filter(m=>String(m.role).toLowerCase()==='owner').map(m=>m.company_id);if(!companyIds.length)throw new Error('Akun ini tidak memiliki akses Owner aktif di database.');let companyId=companyIds[0];if(companyIds.length>1){const {data:companies,error:companyError}=await supabaseClient.from('companies').select('id,name').in('id',companyIds);if(companyError)throw companyError;const match=(companies||[]).find(x=>String(x.name).trim().toLowerCase()===String(localCompany?.name||'').trim().toLowerCase());if(match)companyId=match.id;}const {data:dbBranches,error:branchError}=await supabaseClient.from('branches').select('id,name').eq('company_id',companyId).eq('is_active',true);if(branchError)throw branchError;const selectedNames=[...document.querySelectorAll('.uf_branch:checked')].map(el=>companyBranches(localCompany.id).find(b=>b.id===el.value)?.name).filter(Boolean);const branchIds=(dbBranches||[]).filter(b=>selectedNames.includes(b.name)).map(b=>b.id);if(!branchIds.length)throw new Error('Cabang yang dipilih belum cocok dengan data cabang di database. Muat ulang data cabang atau buat cabang melalui database terlebih dahulu.');if(branchIds.length!==selectedNames.length)throw new Error('Ada cabang pilihan yang belum tersinkron ke database.');return {companyId,branchIds};}
 async function saveUser(editId){
  if(!requirePermission('manageUsers'))return;
  const name=document.getElementById('uf_name')?.value.trim()||'',email=document.getElementById('uf_email')?.value.trim().toLowerCase()||'',password=document.getElementById('uf_password')?.value||'';
@@ -575,7 +576,7 @@ async function saveUser(editId){
   if(target?.cloud){
    try{
     const {data:{session}}=await supabaseClient.auth.getSession();if(!session?.access_token)throw new Error('Sesi Owner tidak ditemukan. Login ulang.');
-    const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({action:'update_member',memberUserId:target.authUserId||target.id,companyId:currentCompany().id,name,role:roleKey.toLowerCase(),branchIds:bids,status:document.getElementById('uf_status')?.value==='true',newPassword:password||undefined})});
+    const targets=await resolveCloudMemberTargets();const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({action:'update_member',memberUserId:target.authUserId||target.id,companyId:targets.companyId,name,role:roleKey.toLowerCase(),branchIds:targets.branchIds,status:document.getElementById('uf_status')?.value==='true',newPassword:password||undefined})});
     const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'Gagal memperbarui member.');
     await loadCloudUser(session.user);closeModal();render();toast('Member cloud berhasil diperbarui');return;
    }catch(e){toast(e.message||'Gagal memperbarui member.');return}
@@ -587,7 +588,7 @@ async function saveUser(editId){
  }
  try{
   const {data:{session}}=await supabaseClient.auth.getSession();if(!session?.access_token)throw new Error('Sesi Owner tidak ditemukan. Silakan login ulang.');
-  const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({email,name,password,role:roleKey.toLowerCase(),branchIds:bids,companyId:currentCompany().id})});
+  const targets=await resolveCloudMemberTargets();const response=await fetch('/api/invite-member',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},body:JSON.stringify({email,name,password,role:roleKey.toLowerCase(),branchIds:targets.branchIds,companyId:targets.companyId})});
   const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'Gagal mengirim undangan.');
   const {data:{user:ownerUser}}=await supabaseClient.auth.getUser();if(ownerUser)await loadCloudUser(ownerUser);
   closeModal();render();toast('Akun member berhasil dibuat untuk '+email);
