@@ -46,6 +46,7 @@ export default async function handler(req,res){
    return json(res,200,{ok:true,saved:data?.length||0});
   }
   if(action==='adjust_stock'){
+   if(!['owner','manajer','kasir','gudang'].includes(role))return json(res,403,{error:'Role ini tidak memiliki izin untuk mengubah stok.'});
    const changes=Array.isArray(req.body?.changes)?req.body.changes:[{legacyId:req.body?.legacyId,delta:req.body?.delta,setStock:req.body?.setStock}];
    if(!changes.length||changes.length>500||changes.some(x=>!x.legacyId))return json(res,400,{error:'Daftar perubahan stok tidak valid.'});
    const {data,error}=await db.rpc('nexora_apply_product_stock_changes',{p_company_id:companyId,p_changes:changes.map(x=>({legacyId:String(x.legacyId),delta:Number(x.delta)||0,setStock:x.setStock===undefined||x.setStock===null?null:Number(x.setStock)}))});
