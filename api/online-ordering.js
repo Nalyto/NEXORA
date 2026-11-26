@@ -63,7 +63,7 @@ export default async function handler(req,res){
    const token=String(body.token||''),image=decodeImage(body.imageData),dbPath='proofs/'+token+'/'+Date.now()+'.'+image.ext;
    const {data:order,error:oe}=await db.from('online_orders').select('id,payment_status').eq('public_token',token).maybeSingle();if(oe)throw oe;if(!order)return send(res,404,{error:'Pesanan tidak ditemukan.'});if(!['awaiting_payment','rejected'].includes(order.payment_status))return send(res,409,{error:'Bukti pembayaran untuk pesanan ini sudah dikirim.'});
    const {error:up}=await db.storage.from(BUCKET).upload(dbPath,image.bytes,{contentType:image.mime,upsert:false});if(up)throw up;
-   const {error:ue}=await db.from('online_orders').update({payment_proof_path:dbPath,payment_status:'proof_submitted',order_status:'awaiting_verification',payment_submitted_at:new Date().toISOString(),rejection_note:null}).eq('id',order.id);if(ue)throw ue;
+   const {error:ue}=await db.from('online_orders').update({payment_proof_path:dbPath,payment_status:'proof_submitted',order_status:'awaiting_verification',payment_submitted_at:new Date().toISOString(),rejection_note:null}).eq('id',order.id);if(ue){await db.storage.from(BUCKET).remove([dbPath]);throw ue;}
    return send(res,200,{ok:true,message:'Bukti pembayaran berhasil dikirim. Menunggu verifikasi Owner.'});
   }
   if(action==='cashier_receive'){
@@ -116,7 +116,7 @@ export default async function handler(req,res){
    let query=db.from('online_orders').select('id,branch_id,order_number,unique_code,payment_method,cash_received_amount,cash_change,customer_name,customer_phone,total,payment_status,order_status,created_at,payment_proof_path,customer_note,table_number').eq('company_id',companyId).order('created_at',{ascending:false}).limit(100);
    if(branchId)query=query.eq('branch_id',branchId);
    const {data:orders,error}=await query;if(error)throw error;
-   const withProof=await Promise.all((orders||[]).map(async o=>{if(!o.payment_proof_path)return {...o,paymentProofUrl:null};const {data:s}=await db.storage.from(BUCKET).createSignedUrl(o.payment_proof_path,900);return {...o,paymentProofUrl:s?.signedUrl||null};}));
+   const withProof=await Promise.all((orders||[]).map(async o=>{if(!o.payment_proof_path)return {...o,paymentProofUrl:null,paymentProofError:null};const {data:s,error:se}=await db.storage.from(BUCKET).createSignedUrl(o.payment_proof_path,900);return {...o,paymentProofUrl:s?.signedUrl||null,paymentProofError:se?.message||null};}));
    return send(res,200,{orders:withProof,userId:user.id});
   }
   if(action==='save_store'){
